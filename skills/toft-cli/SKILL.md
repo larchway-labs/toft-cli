@@ -348,7 +348,7 @@ longer have to read the build log to find out that something was ignored.
 
 ## Files: `toft store`
 
-`toft store ls|put|get|rm` moves files in and out of an app's durable store from
+`toft store ls|cp|mv|mkdir|rm|put|get` moves files in and out of an app's durable store from
 outside the platform, for a person holding a grant. The transfer goes **direct
 to the object store**, so an unreachable bucket is exit 4 naming that host,
 while a refusal from the install is exit 3.
@@ -366,8 +366,37 @@ toft store ls reports/2026-08    # the level below
 
 Listing a level prints folders before objects, which is what makes an object
 filed under a generated name reachable with `toft` alone — you do not have to know
-the name to find it. There is no recursive listing: a folder is a delimiter, and
-the store's extent is not something a client may address around.
+the name to find it. `ls -r` lists everything beneath instead of one level.
+
+**Whole folders: `cp`, `mv`, `mkdir`, `rm -r`.** The store side of `cp` and `mv`
+is written `toft://<store>/<path>`; the other side is a local path or a second
+store path. Flags go first.
+
+```
+toft store cp -r ./out toft://reports/2026/march/      # a folder's contents, up
+toft store cp -r toft://reports/2026/ ./reports         # and down
+toft store cp q1.csv toft://reports/finance/           # one file, under its own name
+toft store mv toft://reports/draft.csv toft://reports/final.csv
+toft store mkdir reports/2027                          # an empty folder
+toft store rm -r --yes reports/2025/                   # a folder and everything in it
+```
+
+- **Every object still moves on its own signed URL**, at the level you hold on
+  that object, so a folder grant narrows `-r` exactly as it narrows `put`.
+  `-j N` sets transfers at once (default 4). One failure does not stop the rest;
+  each is printed, and the command exits 1 naming how many.
+- **`mv` is copy, then delete** — there is no rename in an object store. Each
+  source goes only after its copy landed, so a move that fails partway leaves two
+  copies, never none. Renaming needs `write` at the destination and `full` at the
+  source; at `write`, moving onto a name that exists is refused and changes
+  nothing.
+- **A download never replaces a local file** unless you pass `--force`, and it
+  checks the whole tree before transferring anything.
+- **A store-to-store copy passes through your machine** (`TMPDIR`), never through
+  the install.
+- **A folder is a prefix.** It exists while something is under it; `mkdir` writes
+  the empty marker that keeps an empty one, and a second `mkdir` reports `exists`.
+- `rm -r` asks once, naming the count and size; unattended it needs `--yes`.
 
 ## The SDK before the deploy: `toft sdk vendor`
 

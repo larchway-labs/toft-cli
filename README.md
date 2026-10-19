@@ -55,7 +55,7 @@ plain folder deploys.
 | `toft job list\|run\|runs\|logs\|cancel` | Jobs, which run in a container where the install has a cluster and on the install's own machine where it does not, each with its own memory limit. `toft job run` waits for the job and fails if it fails. `--param k=v` to pass values, `--for <time>` to name the instant the run is for |
 | `toft task list\|create\|edit\|delete\|run\|runs\|logs` | Scheduled tasks, which are HTTP requests to a path your app publishes. `create` needs `--path`, and `--schedule` (with `--timezone` for a zone other than UTC) only if you want the platform to call it on a timetable; `edit` changes only the fields you name |
 | `toft apps` | The apps you can see. `--mine` |
-| `toft store ls\|put\|get\|rm` | Files in an app's durable store |
+| `toft store ls\|cp\|mv\|mkdir\|rm\|put\|get` | Files in an app's durable store. `cp -r` copies whole folders up and down (`toft://<store>/<path>` is the store side), `mv` renames, `mkdir` makes an empty folder, `rm -r` deletes one |
 | `toft sdk vendor` | The app SDK this install carries, written into your working directory so your editor, `go build` and your CI can see it |
 | `toft api <method> <path>` | Call this install's HTTP API with the credential `toft` already holds — the way round a verb `toft` does not have, without putting the key in a shell variable. `--data` takes JSON, `@file` or `@-`. A path with no leading slash is read as relative to `/api/v1/`, so `toft api GET apps` and `toft api GET /api/v1/apps` are the same call |
 
