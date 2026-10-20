@@ -268,8 +268,23 @@ for this app" on a screen instead of leaving it to be found at 2am in a log.
 | `toft.scratch_dir("uploads")` / `toft.scratchDir` / `toft.ScratchDir` | ephemeral, per app, **wiped on every start, restart and redeploy** |
 | `toft.session_scratch_dir(id)` / `toft.sessionScratchDir` / `toft.SessionScratchDir` | one browser session's corner of it. The id is hashed, so a traversing value cannot escape; an empty one is refused |
 | `toft.storage("reports").path` / `toft.Storage(…).Path` | a durable volume an administrator mapped to this app, resolved by name |
-| `toft.store("reports").put(path)` / `toft.Store(…).Put(path, name)` | a file into an object store |
+| `toft.store("reports").put(path)` / `toft.Store(…).Put(path, name)` | a file into an object store **that is mounted here** |
+| `toft.store("reports").upload(path)` · `download(name)` · `url(name)` · `remove(name)` · `list(path)` | the same store over the platform's signed URLs — in both modes, mounted or not |
 | `toft.mounts()` / `toft.Mounts()` | everything mapped, with `read_only` / `ReadOnly()` |
+
+**A store is reached over signed URLs as well as at its path, and on an install
+with no cluster only that way.** There nothing mounts a store: its entry has an
+empty path, `.path` raises (Go: `Mounted()` is false and `Put` refuses), and
+`upload` / `download` / `url` / `remove` / `list` are how the app reaches it.
+They work the same where the store *is* mounted, so code written against them
+moves between execution modes unchanged. The app signs at its mapping's level —
+`write` creates new objects only, and an existing name is refused by name — and
+the bytes go straight to the object store. `url(name, attachment=True)` is a
+fifteen-minute link to hand to a browser; anyone holding it can read the object.
+Go takes a context first (`Upload(ctx, path, "")`), Node takes options objects
+(`url(name, { attachment: true })`), and R has functions rather than methods:
+`store_upload(store("drop"), "report.csv")`, `store_download`, `store_url`,
+`store_remove`, `store_list`.
 
 **One name can be two mounts.** A mapping's identity is
 `(resource, app, folder)`, so an administrator can attach one resource twice —

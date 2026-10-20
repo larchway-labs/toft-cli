@@ -349,9 +349,11 @@ longer have to read the build log to find out that something was ignored.
 ## Files: `toft store`
 
 `toft store ls|cp|mv|mkdir|rm|put|get` moves files in and out of an app's durable store from
-outside the platform, for a person holding a grant. The transfer goes **direct
-to the object store**, so an unreachable bucket is exit 4 naming that host,
-while a refusal from the install is exit 3.
+outside the platform, for a person holding a grant. On a bucket the transfer goes
+**direct to the object store**, so an unreachable bucket is exit 4 naming that
+host, while a refusal from the install is exit 3. On storage that is a directory
+on the install's own host, the install carries the bytes itself and the URL is
+the install's — the commands are the same either way.
 
 **`ls` shows folders and takes one.** A bare `toft store ls` lists what you hold:
 a store granted outright by its name alone, and a store granted one folder of as
