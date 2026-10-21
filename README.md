@@ -46,7 +46,7 @@ plain folder deploys.
 | `toft status` | What is serving, since when, and from what |
 | `toft deps` | What the dependency policy says about the app. If a deploy was refused, this is the packages, the advisories and the versions that fix it |
 | `toft logs` | The app's log. `--follow`, or `--deploy <id>` for one build's output |
-| `toft rollback [id]` | Back to the previous release. Names it before it acts |
+| `toft rollback [id]` | Back to the previous deployment. Names it before it acts |
 | `toft create [dir]` | Make a new app and deploy this directory into it. Tells you the name it will take and asks first. `--repo <url>` to build from a repository instead, and `--subdir <folder>` with it to build one folder of a repository that holds several apps |
 | `toft redeploy` | Build again from the app's own repository. Sends nothing from your disk |
 | `toft restart` / `toft start` | Restart the app, starting it if it is stopped. `--wait` waits until it is up and fails if it never comes up |

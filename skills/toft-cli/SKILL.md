@@ -96,7 +96,7 @@ toft status                       # what is serving, since when, from what
 toft logs --follow                # what the app said
 toft events                       # what the platform noticed
 toft deps                         # what the dependency policy says about it
-toft rollback --yes               # back to the previous release
+toft rollback --yes               # back to the previous deployment
 ```
 
 - **`toft create`** claims a name in the estate's namespace, so it says which slug
@@ -166,7 +166,7 @@ Afterwards:
 | `toft logs` | the app's runtime log — `--follow`, `--lines`, `--since 2h`, `--source app\|platform`. `--json` is one object per line: `at`, `source`, `stream`, `line`, and on exactly one line a `marker` |
 | `toft logs --deploy <id>` | one build's log instead. `--source` and `--since` are refused with it |
 | `toft events` | what the platform noticed going wrong — the command to run after a restart that did not take |
-| `toft status --json` | the app, the serving release, and the app's URL |
+| `toft status --json` | the app, the serving deployment, and the app's URL |
 | `toft deps --json` | the packages, the advisories, and the versions that fix a refused deploy |
 
 ## When the dependency policy refuses a deploy
@@ -499,7 +499,7 @@ with `toft api`, which is the point of the column on the right:
 | Creating, editing or deleting a scheduled task | `toft task create\|edit\|delete`, with a full personal key |
 | A notebook's re-render schedule | Not in the CLI, and not a scheduled task — it produces a new rendered release rather than calling a path. The Automation tab, or `PUT`/`DELETE /api/v1/apps/{id}/render-schedule` |
 | An app's tags | Not in the CLI. `PUT /api/v1/apps/{id}/tags` with the ids of tags that already exist; creating the tags themselves is an administrator's |
-| Pruning old releases | Not in the CLI. `DELETE /api/v1/apps/{id}/deployments` drops every release but the serving one, and `DELETE .../deployments/{deployID}` drops one. A pruned release is no longer a rollback target |
+| Pruning old deployments | Not in the CLI. `DELETE /api/v1/apps/{id}/deployments` drops every deployment but the serving one, and `DELETE .../deployments/{deployID}` drops one. A pruned deployment is no longer a rollback target |
 | Grants, storage mappings, integrations | Administrator surfaces, in the UI or the API |
 | Publishing from RStudio | Not `toft`'s: RStudio's *Add account* takes the install's address as a Posit Connect server, signs in through the same approval page as `toft login`, and publishes with rsconnect. Its routes are under `/__api__`; an agent deploys with `toft` |
 
