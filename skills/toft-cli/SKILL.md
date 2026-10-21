@@ -57,6 +57,27 @@ administrator creates under **Admin → Deploy keys**):
 printf '%s' "$TOFT_KEY" | toft login --token-stdin https://toft.corp
 ```
 
+**The administrator's half has a door of its own, and it is not the key.** A
+key operates apps and is refused, by design, every route that decides who may do
+what: storage grants and delegations, locking an app, install settings,
+integrations, minting keys. Those answer `session_required`. When you hold the
+built-in administrator's password, sign in with it once — it stores a **session
+beside the key** — and run those calls with `--session`:
+
+```bash
+printf '%s' "$TOFT_ADMIN_PASSWORD" | toft login --password-stdin https://toft.corp   # --user admin is the default
+toft api PUT admin/storage/<id>/grants --data '{"subject_type":"user","subject_id":"…","access":"overwrite"}' --session
+toft api POST apps/<id>/lock --data '{"reason":"…"}' --session
+toft fetch / --session        # the app sees a signed-in person: who() answers with a name
+```
+
+Everything without `--session` still uses the key. The session lives the
+install's session lifetime (hours, with an idle clock that `toft` keeps renewed
+while you use it); when it ends, `--session` refuses with exit 3 and says to sign
+in again — it never falls back to the key. `toft login --status` shows both. If
+the password form answers that local sign-in is switched off, the install signs
+in through SSO only and the administrator's half needs a person.
+
 **Flags may come before or after the positional argument**, in every command:
 `toft login <url> --token-stdin` and `toft link my-app --local` read the flag.
 `toft link my-app --app other` names two apps and is refused, exit 2.
@@ -129,6 +150,14 @@ toft rollback --yes               # back to the deployment before the serving on
   folder. **The argument is a directory, not a name**: `toft create my-app`
   with no `my-app/` here is exit 2 (`no_such_directory`) before anything is
   printed, and names `--app my-app` — the spelling that sets the slug.
+  **A slug you name** with `--app` or in `toft.toml` that is already taken is
+  refused, exit 2, `code: name_taken`; if the app is yours, `toft link <slug>`
+  and `toft deploy`. A slug taken from a folder or directory name is still
+  renamed (`-2`) and says so. `toft create --json` waits for the first build and
+  answers like `deploy --json`; add `--no-watch` for the app document alone. A
+  repository that does not exist, is private with no credential, or has no such
+  branch is refused before anything is created: exit 1, `code:
+  source_unavailable`.
 - **`toft deploy`** bundles the working directory as it is, uncommitted edits
   included. It needs no git remote, no commit, not even a repository. It never
   creates an app — a missing link is exit 2 naming `toft link <slug>`.
@@ -166,7 +195,9 @@ toft rollback --yes               # back to the deployment before the serving on
   asks whether the process answers *something*; a page that throws on its first
   real request passes that and fails this. A 5xx or a refused connection is
   retried for `--verify-timeout` (30s); a 404 is an answer and is not. Under
-  `--json` it is a `verify` object inside the one result document.
+  `--json` it is a `verify` object inside the one result document. **A failed
+  check leaves the new release serving**: the message and `verify.next` name
+  `toft rollback --yes --app <slug>`.
 - **`toft env`**, **`toft visibility`**, **`toft deployments`** and **`toft
   delete`** are the app's settings and history — see Changing the app.
 
@@ -217,7 +248,7 @@ Afterwards:
 
 | | |
 |---|---|
-| `toft logs` | the app's runtime log — `--follow` (prints each line once, as it arrives), `--lines` (1 or more; below that is exit 2), `--since 2h`, `--source app\|platform`. `--json` is one object per line: `at`, `source`, `stream`, `line`, and on exactly one line a `marker`. Piped or redirected, the app's own colour codes are removed; a terminal keeps them |
+| `toft logs` | the app's runtime log — `--follow` (prints each line once, as it arrives), `--lines` (1 or more; below that is exit 2), `--since 2h`, `--source app\|platform`. `--json` is one object per line: `at`, `source`, `stream`, `line`, and, on an isolated install, a `marker` (`workload_start`) on the one line where the platform's stored account gives way to the workload's own output — a shared install interleaves the two by time and draws no marked boundary. Piped or redirected, the app's own colour codes are removed; a terminal keeps them |
 | `toft logs --deploy <id>` | one build's log instead, whole — `--lines N` makes it the last N. `--source` and `--since` are refused with it |
 | `toft events` | what the platform noticed going wrong — the command to run after a restart that did not take |
 | `toft status --json` | the app, the serving deployment, the app's URL, and two clocks: `serving_since` (when this release became the live one — a rollback's is recent even when its build is old) and `status_changed_at`. Absent from an older install. The text form prints `status running for 5 minutes`, `since` and `built` as separate lines |
@@ -274,7 +305,8 @@ toft fetch /healthz --expect 200
 It resolves the app's address the same way `status` does, sends your key to
 that address only, and exits 1 for an answer that is not 2xx or 3xx. A `..` or
 `.` segment in the path is refused before anything is sent (exit 2,
-`invalid_path`): a fetch stays inside the app. **The body
+`invalid_path`): a fetch stays inside the app. It takes a path of the app, never
+a URL: `https://…` is exit 2 `invalid_path` too. **The body
 is bounded** at `--max-body` bytes (8192; `0` for all), so a page of minified
 JavaScript does not land in your context to tell you the deploy worked. It waits
 `--timeout` for the answer (60s); an endpoint slower than that is better made
@@ -375,7 +407,7 @@ A contract, and the reason a failed run can be triaged without reading the log:
 | | |
 |---|---|
 | 0 | it worked |
-| 1 | the platform did the thing and it failed — a failed build, a refused scan, a failed job run |
+| 1 | the platform did the thing and it failed — a failed build, a refused scan, a failed job run — and a wait that ran out (`--timeout`, `--wait-timeout`): the work is still going on the platform, and the message names the command that follows it |
 | 2 | usage or configuration — no app linked, a bad flag, an argument nothing reads, jobs not available on this install, a confirmation nothing could answer, **an app that is locked**, **a name that does not resolve** (an unknown deployment id — `deploy --watch` and `deployments delete` too — task run, store, job or task), or **a name already taken** (`name_taken`, e.g. `toft task create` of an existing task) |
 | 3 | not authenticated, or refused — no credential, a revoked or expired key, uploads switched off, a license limit, or **the app's state refusing**: a disabled task (`schedule_disabled`), the serving deployment (`deployment_protected`) |
 | 4 | the install did not answer |
@@ -530,6 +562,7 @@ toft store ls                              # what you can reach, and at what lev
 toft store ls reports                      # one level: its folders, then its objects
 toft store ls toft://reports/2026-08/      # the level below
 toft store get toft://reports/2026-08/q1.csv   # or: get reports 2026-08/q1.csv
+toft store get toft://reports/2026-08/q1.csv -o -   # to stdout
 ```
 
 Listing a level prints folders before objects, which is what makes an object

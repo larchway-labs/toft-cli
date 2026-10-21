@@ -61,9 +61,15 @@ Traps worth knowing before you hit them:
 - **A frontend-only repo with a `package.json`** is not static. Either add a
   server and a `start` script, or commit the build output and declare
   `[static] root = "dist"`.
-- The language version is **discovered on the install, never approximated**. A
-  pin naming a patch version is refused rather than truncated; declare it once
-  in the file the language already uses (`go.mod` for Go).
+- The language version is **discovered on the install, never approximated**.
+  Pin Node, Python or R in `toft.toml` — `[runtime]` with `node = "22"`,
+  `python = "3.13"` or `r = "4.5"` — and Go in `go.mod`'s `go` line, where a
+  `[runtime] go` key is refused. **`engines.node` and `.nvmrc` are not read**,
+  so a Node app pinned only there silently gets the install default (`toft check`
+  shows which); a pyproject `requires-python` moves the Python default only when
+  it excludes it. Node is matched on the major alone (`"22.23.3"` is refused),
+  and a pin naming a version the install lacks is `runtime_version` —
+  `toft whoami` lists what it carries.
 
 R has four of its own, and the first is the one that costs a deploy:
 
@@ -235,7 +241,15 @@ part a person reading your logs acts on.
 
 A refusal the SDK makes itself, before any request, carries the same fields:
 `mine()` on the app acting as itself is `code: viewer_required`, `retryable:
-false` — call it on `viewer(headers).jobs`.
+false` — call it on `viewer(headers).jobs`. So do the storage refusals, in all four
+languages: `not_mapped` (no resource by that name), `ambiguous_mount` (one name
+mounted twice and no folder named), `not_mounted` (`.path`/`put` on a store
+reached over signed URLs), `insufficient_access`, `already_exists` (an existing
+name at `write`), `not_a_store` and `invalid_name` — every one `retryable: false`
+(in R a `toft_error` condition with `status` NA). `who()` answering nobody over
+an **API key** is the same fact from the other side: the gateway authorizes a key
+as its owner and asserts no person to the app; a signed-in browser —
+`toft fetch --session` — is what carries a viewer.
 
 The SDK's own single retry is narrower still: it covers a request that never
 reached a handler (a rate limit, a gateway), so the platform can veto it but a
@@ -304,7 +318,7 @@ for this app" on a screen instead of leaving it to be found at 2am in a log.
 | `toft.storage("reports").path` / `toft.Storage(…).Path` | a durable volume an administrator mapped to this app, resolved by name |
 | `toft.store("reports").put(path)` / `toft.Store(…).Put(path, name)` | a file into an object store **that is mounted here** |
 | `toft.store("reports").upload(path)` · `download(name)` · `url(name)` · `remove(name)` · `list(path)` | the same store over the platform's signed URLs — in both modes, mounted or not |
-| `toft.mounts()` / `toft.Mounts()` | everything mapped, with `read_only` / `ReadOnly()` |
+| `toft.mounts()` / `toft.Mounts()` | everything mapped, with `read_only` / `readOnly` / `ReadOnly()` |
 
 **A store is reached over signed URLs as well as at its path, and on an install
 with no cluster only that way.** There nothing mounts a store: its entry has an

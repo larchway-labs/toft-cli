@@ -40,17 +40,17 @@ plain folder deploys.
 
 | | |
 |---|---|
-| `toft login [url]` | Sign in to an install. `--status` says who and where, `--forget` drops a stored credential (`--forget-all` every one), `--token-stdin` for CI |
+| `toft login [url]` | Sign in to an install. `--status` says who and where, `--forget` drops a stored credential (`--forget-all` every one), `--token-stdin` for CI, `--password-stdin` to store the built-in administrator's session beside the key — used by any command run with `--session` |
 | `toft link <app>` | Record which app this directory deploys to. `--local` keeps it out of git |
 | `toft deploy [dir]` | Bundle and upload. `--logs` interleaves the build log, `--json` for scripts, `--verify <path>` checks the app answers once it is live, `--dry-run` is `toft check` |
 | `toft check [dir]` | What a deploy of this directory would decide — what the app is, which language version it gets, what in `toft.toml` is ignored — without deploying anything |
 | `toft status` | What is serving, since when, and from what |
-| `toft fetch [path]` | Request a page of your deployed app as you, even when it is private. Prints the status and the start of the body; `--anonymous` shows what a stranger sees. A stopped app says so and names `toft start` |
+| `toft fetch [path]` | Request a page of your deployed app as you, even when it is private. Prints the status and the start of the body; `--anonymous` shows what a stranger sees. A stopped app says so and names `toft start`. It takes a path, not a URL |
 | `toft whoami` | Who you are signed in as, what your key can do, and what this install allows — uploads, public apps, jobs, language versions |
 | `toft deps` | What the dependency policy says about the app. If a deploy was refused, this is the packages, the advisories and the versions that fix it |
 | `toft logs` | The app's log. `--follow`, or `--deploy <id>` for one build's output |
 | `toft rollback [id]` | Back to the previous deployment. Names it before it acts, and the release now serving once it is done |
-| `toft create [dir]` | Make a new app and deploy this directory into it. Tells you the name it will take and asks first. `--repo <url>` to build from a repository instead, and `--subdir <folder>` with it to build one folder of a repository that holds several apps |
+| `toft create [dir]` | Make a new app and deploy this directory into it. Tells you the name it will take and asks first. `--repo <url>` to build from a repository instead, and `--subdir <folder>` with it to build one folder of a repository that holds several apps. A slug you named that is taken is refused rather than renamed |
 | `toft redeploy` | Build again from the app's own repository. Sends nothing from your disk |
 | `toft restart` / `toft start` | Restart the app, starting it if it is stopped. `--wait` waits until it is up and fails if it never comes up |
 | `toft stop` | Stop the app |
@@ -62,7 +62,7 @@ plain folder deploys.
 | `toft job list\|run\|runs\|logs\|cancel` | Jobs, which run in a container where the install has a cluster and on the install's own machine where it does not, each with its own memory limit. `toft job run` waits for the job and fails if it fails. `--param k=v` to pass values, `--for <time>` to name the instant the run is for |
 | `toft task list\|create\|edit\|delete\|run\|runs\|logs` | Scheduled tasks, which are HTTP requests to a path your app publishes. `create` needs `--path`, and `--schedule` (with `--timezone` for a zone other than UTC) only if you want the platform to call it on a timetable; `edit` changes only the fields you name, and a switch is written `--enabled=false` |
 | `toft apps` | The apps you can see. `--mine` |
-| `toft store ls\|cp\|mv\|mkdir\|rm\|put\|get` | Files in an app's durable store. `cp -r` copies whole folders up and down (`toft://<store>/<path>` is the store side), `mv` renames, `mkdir` makes an empty folder, `rm -r` deletes one. Every path prints as `toft://<store>/<path>`, which every subcommand takes back |
+| `toft store ls\|cp\|mv\|mkdir\|rm\|put\|get` | Files in an app's durable store. `cp -r` copies whole folders up and down (`toft://<store>/<path>` is the store side), `mv` renames, `mkdir` makes an empty folder, `rm -r` deletes one. Every path prints as `toft://<store>/<path>`, which every subcommand takes back `get … -o -` writes to stdout. |
 | `toft sdk vendor` | The app SDK this install carries, written into your working directory so your editor, `go build` and your CI can see it |
 | `toft skill [name]` | Print the agent skills written for this version of `toft` — `toft-cli` and `toft-sdk` — to drop into a coding agent's skills folder |
 | `toft api <method> <path>` | Call this install's HTTP API with the credential `toft` already holds — the way round a verb `toft` does not have, without putting the key in a shell variable. `--data` takes JSON, `@file` or `@-`. A path with no leading slash is read as relative to `/api/v1/`, so `toft api GET apps` and `toft api GET /api/v1/apps` are the same call |
