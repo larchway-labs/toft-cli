@@ -62,7 +62,7 @@ plain folder deploys.
 | `toft job list\|run\|runs\|logs\|cancel` | Jobs, which run in a container where the install has a cluster and on the install's own machine where it does not, each with its own memory limit. `toft job run` waits for the job and fails if it fails. `--param k=v` to pass values, `--for <time>` to name the instant the run is for |
 | `toft task list\|create\|edit\|delete\|run\|runs\|logs` | Scheduled tasks, which are HTTP requests to a path your app publishes. `create` needs `--path`, and `--schedule` (with `--timezone` for a zone other than UTC) only if you want the platform to call it on a timetable; `edit` changes only the fields you name, and a switch is written `--enabled=false` |
 | `toft apps` | The apps you can see. `--mine` |
-| `toft store ls\|cp\|mv\|mkdir\|rm\|put\|get` | Files in an app's durable store. `cp -r` copies whole folders up and down (`toft://<store>/<path>` is the store side), `mv` renames, `mkdir` makes an empty folder, `rm -r` deletes one |
+| `toft store ls\|cp\|mv\|mkdir\|rm\|put\|get` | Files in an app's durable store. `cp -r` copies whole folders up and down (`toft://<store>/<path>` is the store side), `mv` renames, `mkdir` makes an empty folder, `rm -r` deletes one. Every path prints as `toft://<store>/<path>`, which every subcommand takes back |
 | `toft sdk vendor` | The app SDK this install carries, written into your working directory so your editor, `go build` and your CI can see it |
 | `toft skill [name]` | Print the agent skills written for this version of `toft` — `toft-cli` and `toft-sdk` — to drop into a coding agent's skills folder |
 | `toft api <method> <path>` | Call this install's HTTP API with the credential `toft` already holds — the way round a verb `toft` does not have, without putting the key in a shell variable. `--data` takes JSON, `@file` or `@-`. A path with no leading slash is read as relative to `/api/v1/`, so `toft api GET apps` and `toft api GET /api/v1/apps` are the same call |
@@ -170,8 +170,8 @@ If a step fails, `toft events` says what the platform noticed.
 |---|---|
 | `0` | It worked |
 | `1` | The platform did the thing and it failed — a failed build, a refused bundle |
-| `2` | Usage or configuration: no app linked, a bad flag, a name that does not exist, a path no route on the install matches, a prompt that could not be asked, or an app an administrator has locked |
-| `3` | Not authenticated, or refused. If it says your account is a viewer, creating and deploying apps needs the publisher role — ask an administrator for it |
+| `2` | Usage or configuration: no app linked, a bad flag, a name that does not exist or is already taken, a path no route on the install matches, a prompt that could not be asked, or an app an administrator has locked |
+| `3` | Not authenticated, or refused — including a refusal by the app's state, such as running a disabled task or deleting the serving deployment. If it says your account is a viewer, creating and deploying apps needs the publisher role — ask an administrator for it |
 | `4` | Could not reach the install |
 
 ## For coding agents

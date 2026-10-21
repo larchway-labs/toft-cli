@@ -57,9 +57,9 @@ administrator creates under **Admin → Deploy keys**):
 printf '%s' "$TOFT_KEY" | toft login --token-stdin https://toft.corp
 ```
 
-**Flags come before the positional argument.** `toft login <url> --token-stdin`
-is refused, exit 2 — the flag would otherwise be dropped and you would be back
-in the device flow. **A word no command reads is refused too**, exit 2, rather
+**Flags may come before or after the positional argument**, in every command:
+`toft login <url> --token-stdin` and `toft link my-app --local` read the flag.
+A word after `--` is an argument whatever it looks like. **A word no command reads is refused too**, exit 2, rather
 than ignored. **A switch takes its value after `=`**: `--enabled=false`, never
 `--enabled false` — the second is a bare `--enabled` (true) followed by a stray
 word, and is refused by name.
@@ -115,7 +115,8 @@ toft status                       # what is serving, since when, from what
 toft logs --follow                # what the app said
 toft events                       # what the platform noticed
 toft deps                         # what the dependency policy says about it
-toft rollback --yes               # back to the previous deployment
+toft rollback --yes               # back to the deployment before the serving one
+                                  # (again: further back; never forward)
 ```
 
 - **`toft create`** claims a name in the estate's namespace, so it says which slug
@@ -134,7 +135,8 @@ toft rollback --yes               # back to the previous deployment
   nothing. On an uploaded app it is refused, naming `toft deploy`.
 - **`toft restart --wait`** starts a stopped app and fails if it does not come up.
   `toft start` is the same call under the name that reads right when it is
-  stopped; `toft stop` stops it.
+  stopped; `toft stop` stops it, and says `already stopped` (`"changed": false`
+  under `--json`) when there was nothing to do.
 - **`toft apps`** lists the apps this credential can see, `--mine` for the ones it
   owns. It is how to find a slug you do not know.
 - **`toft check`** (or `toft deploy --dry-run`) sends the bundle `toft deploy`
@@ -147,7 +149,11 @@ toft rollback --yes               # back to the previous deployment
   `not_checked` says so — so a clean check is "these decisions pass", not "this
   will deploy". It costs an upload and saves a build. **It works before
   `toft create`**: with no app linked, or a slug nobody has claimed, it checks
-  the directory as a new app, behind the same doors a create has. It names
+  the directory as a new app, behind the same doors a create has, and so does
+  `toft deploy --dry-run`. Its `--json` `warnings` are sentences, the same a
+  deploy's result carries; `warning_details` gives each a `code`
+  (`manifest_unread`, `requires_python_excluded`) and, for a `toft.toml` key,
+  its `table`. It names
   the secret-looking files the bundle carries (`including .env`) as a deploy
   does, and warns when `toft.toml` declares jobs and `toft whoami` says this
   install runs none.
@@ -173,7 +179,8 @@ end, which is the shape to parse rather than the pretty output.
 
 **A successful deploy can still carry `warnings`.** They are the things the
 platform noticed and carried on past — a table in `toft.toml` that no
-reader names, most often — and they are absent from the object when there are
+reader names, most often, or a secret-looking file the bundle carried — and
+they are absent from the object when there are
 none, and absent from an install older than the field, which means "this install
 does not report warnings" rather than "there were none".
 
@@ -207,10 +214,10 @@ Afterwards:
 
 | | |
 |---|---|
-| `toft logs` | the app's runtime log — `--follow` (prints each line once, as it arrives), `--lines`, `--since 2h`, `--source app\|platform`. `--json` is one object per line: `at`, `source`, `stream`, `line`, and on exactly one line a `marker` |
-| `toft logs --deploy <id>` | one build's log instead. `--source` and `--since` are refused with it |
+| `toft logs` | the app's runtime log — `--follow` (prints each line once, as it arrives), `--lines` (1 or more; below that is exit 2), `--since 2h`, `--source app\|platform`. `--json` is one object per line: `at`, `source`, `stream`, `line`, and on exactly one line a `marker`. Piped or redirected, the app's own colour codes are removed; a terminal keeps them |
+| `toft logs --deploy <id>` | one build's log instead, whole — `--lines N` makes it the last N. `--source` and `--since` are refused with it |
 | `toft events` | what the platform noticed going wrong — the command to run after a restart that did not take |
-| `toft status --json` | the app, the serving deployment, and the app's URL |
+| `toft status --json` | the app, the serving deployment, the app's URL, and two clocks: `serving_since` (when this release became the live one — a rollback's is recent even when its build is old) and `status_changed_at`. Absent from an older install. The text form prints `status running for 5 minutes`, `since` and `built` as separate lines |
 | `toft deps --json` | the packages, the advisories, and the versions that fix a refused deploy |
 
 ## When the dependency policy refuses a deploy
@@ -262,7 +269,9 @@ toft fetch /healthz --expect 200
 ```
 
 It resolves the app's address the same way `status` does, sends your key to
-that address only, and exits 1 for an answer that is not 2xx or 3xx. **The body
+that address only, and exits 1 for an answer that is not 2xx or 3xx. A `..` or
+`.` segment in the path is refused before anything is sent (exit 2,
+`invalid_path`): a fetch stays inside the app. **The body
 is bounded** at `--max-body` bytes (8192; `0` for all), so a page of minified
 JavaScript does not land in your context to tell you the deploy worked. **When
 the platform answers in the app's place** — a stopped, locked or crashed app
@@ -319,6 +328,12 @@ toft deployments delete 4f1a2b --yes   # a unique prefix (6+ characters) is enou
 toft delete my-app --yes               # the slug typed out; no undo
 ```
 
+Under `--json`: `env list` rows carry `value` whenever it was shown — `""`
+for an empty one — and `"sensitive": true` with no value for a write-only one.
+`task list` gives `schedule` as the bare cron expression and `timezone` beside
+it (`UTC` when none). `deployments list` is the install's answer, except that
+`step_timings` is an object rather than a string holding one.
+
 - **A deployment id can be shortened to a unique prefix of six or more
   characters** wherever one is taken — `toft deployments delete`, `toft logs
   --deploy`, `toft rollback <id>`. A prefix that matches nothing or several is
@@ -356,8 +371,8 @@ A contract, and the reason a failed run can be triaged without reading the log:
 |---|---|
 | 0 | it worked |
 | 1 | the platform did the thing and it failed — a failed build, a refused scan, a failed job run |
-| 2 | usage or configuration — no app linked, a bad flag, an argument nothing reads, jobs not available on this install, a confirmation nothing could answer, **an app that is locked**, or **a name that does not resolve** (an unknown deployment id, task run, store, job or task) |
-| 3 | not authenticated, or refused — no credential, a revoked or expired key, uploads switched off, a license limit |
+| 2 | usage or configuration — no app linked, a bad flag, an argument nothing reads, jobs not available on this install, a confirmation nothing could answer, **an app that is locked**, **a name that does not resolve** (an unknown deployment id — `deploy --watch` and `deployments delete` too — task run, store, job or task), or **a name already taken** (`name_taken`, e.g. `toft task create` of an existing task) |
+| 3 | not authenticated, or refused — no credential, a revoked or expired key, uploads switched off, a license limit, or **the app's state refusing**: a disabled task (`schedule_disabled`), the serving deployment (`deployment_protected`) |
 | 4 | the install did not answer |
 
 Under `--json` an exit-2 refusal carries a `code` wherever one names the
@@ -365,7 +380,9 @@ mistake: the install's own (`not_found` for an id or store that resolves to
 nothing, its validation code for a cron expression or time zone it refused), or
 this client's — `manifest_invalid` for a `toft.toml` that does not parse,
 `no_such_directory` for a directory argument that is not one, `invalid_method`
-and `invalid_overlap` for `toft task create|edit`.
+and `invalid_overlap` for `toft task create|edit`. An exit-3 refusal from a 409
+is `"kind": "refused"` with the install's code. One mapping decides all of this
+for every verb, so no verb answers 1 for something that never ran.
 
 ## Running unattended
 
@@ -386,12 +403,13 @@ English off stderr:
  "retryable":false,"hint":"mint a new key — `toft login` replaces the stored one; retrying will not help"}
 ```
 
-`kind` is the client's classification — `usage`, `auth`, `unreachable`, `locked`,
-`failed` — and `code` is the install's own, present only when it sent one.
+`kind` is the client's classification — `usage`, `auth`, `refused`, `unreachable`,
+`locked`, `failed` — and `code` is the install's own, present only when it sent one.
 **`retryable` is always there and is the field to branch on**: the install's own
 answer when the refusal was the install's (a full job queue is `true` at 409; a
 503 that means "this install is configured without it" is `false`), and for a
-refusal `toft` made itself, `true` only when the install could not be reached.
+refusal `toft` made itself, `true` only when the install could not be reached —
+and not then when the host name does not resolve, which a retry cannot fix.
 `hint` is the next step in the install's words, when there is one — act on it
 rather than on the sentence. The sentence and the hint still go to stderr as
 well. A **failed deploy is the exception**: its result object already said
@@ -491,24 +509,35 @@ host, while a refusal from the install is exit 3. On storage that is a directory
 on the install's own host, the install carries the bytes itself and the URL is
 the install's — the commands are the same either way.
 
-**`ls` shows folders and takes one.** A bare `toft store ls` lists what you hold:
-a store granted outright by its name alone, and a store granted one folder of as
-`reports/2026-08/`. That is the same spelling `ls` takes as an argument, so the
-line one command prints is the line the next one takes.
+**Every path is printed one way: `toft://<store>/<path>`**, folders with a
+trailing slash — in `ls`, `ls -r`, `rm`, `mkdir`, `put` and the copy lines — and
+every subcommand takes that form back, so the line one command prints is the line
+the next one takes. A bare `toft store ls` lists what you hold: a store granted
+outright as `toft://reports/`, and one granted a single folder of as
+`toft://reports/2026-08/`.
 
 ```
-toft store ls                    # what you can reach, and at what level
-toft store ls reports            # one level: its folders, then its objects
-toft store ls reports/2026-08    # the level below
+toft store ls                              # what you can reach, and at what level
+toft store ls reports                      # one level: its folders, then its objects
+toft store ls toft://reports/2026-08/      # the level below
+toft store get toft://reports/2026-08/q1.csv   # or: get reports 2026-08/q1.csv
 ```
 
 Listing a level prints folders before objects, which is what makes an object
 filed under a generated name reachable with `toft` alone — you do not have to know
 the name to find it. `ls -r` lists everything beneath instead of one level.
+`--json` is `{"folders": [...], "objects": [...]}` for both, with empty arrays
+rather than `null`, and names relative to what was listed.
+
+**A partitioned store takes writes only inside the folders apps are mapped to**,
+on any backing. `toft store ls` prints them under the store's row, or says that
+no folder is mapped yet and writes are refused — a level of `full` is not the
+whole answer there. A write beside them is exit 3, code
+`outside_mapped_folders`, naming the folders you could write in.
 
 **Whole folders: `cp`, `mv`, `mkdir`, `rm -r`.** The store side of `cp` and `mv`
 is written `toft://<store>/<path>`; the other side is a local path or a second
-store path. Flags go first.
+store path. Flags may come before or after the arguments.
 
 ```
 toft store cp -r ./out toft://reports/2026/march/      # a folder's contents, up
@@ -519,8 +548,14 @@ toft store mkdir reports/2027                          # an empty folder
 toft store rm -r --yes reports/2025/                   # a folder and everything in it
 ```
 
-- **`toft store rm` resolves the store before it asks**, so a store you cannot
-  reach is exit 2 `not_found` rather than a refusal for `--yes`.
+- **`toft store rm` resolves the store and the name before it asks**, so a store
+  you cannot reach or an object that is not there is exit 2 `not_found`, and a
+  folder without `-r` is exit 2 `is_a_folder` — never "deleted" over nothing,
+  and never a refusal for `--yes`. `rm -r` of a single object deletes it.
+- **Exit codes**: 2 for a name that does not resolve (`get` of a missing object
+  is `not_found`) or a name the install will not take (`../x` is `bad_request`),
+  3 for a refusal (your level, or a partitioned store's folders), 1 only when the
+  transfer itself failed.
 - **Every object still moves on its own signed URL**, at the level you hold on
   that object, so a folder grant narrows `-r` exactly as it narrows `put`.
   `-j N` sets transfers at once (default 4). One failure does not stop the rest;
@@ -530,13 +565,15 @@ toft store rm -r --yes reports/2025/                   # a folder and everything
   copies, never none. Renaming needs `write` at the destination and `full` at the
   source; at `write`, moving onto a name that exists is refused and changes
   nothing.
-- **A download never replaces a local file** unless you pass `--force`, and it
-  checks the whole tree before transferring anything.
+- **A download never replaces a local file** unless you pass `--force` — `get`
+  (with or without `-o`), `cp` and `mv` alike — and it checks the whole tree
+  before transferring anything.
 - **A store-to-store copy passes through your machine** (`TMPDIR`), never through
   the install.
 - **A folder is a prefix.** It exists while something is under it; `mkdir` writes
   the empty marker that keeps an empty one, and a second `mkdir` reports `exists`.
-- `rm -r` asks once, naming the count and size; unattended it needs `--yes`.
+- `rm -r` asks once, naming the count and size of exactly what it will delete,
+  empty-folder markers included; unattended it needs `--yes`.
 
 ## The SDK before the deploy: `toft sdk vendor`
 
@@ -548,6 +585,9 @@ and a local `go build`, `go vet` or CI run that does not fail on the import.
 toft sdk vendor                  # language detected from the tree
 toft sdk vendor --lang python
 ```
+
+Under `--json`, `sdk_version` is the version the SDK declares and
+`install_version` the install's (`version` is the install's too, as before).
 
 It writes `.toft/sdk-<lang>/` from the install you are signed in to, so the
 bytes you compile against are the ones that install's build would have used, and
@@ -604,12 +644,11 @@ key: it keeps the secret out of your shell variables, out of the process table,
 and out of whatever captured your output.
 
 Exit codes are the usual contract and are **coarser than the HTTP status**: 2 for
-a path that matches no route, 3 for a credential or permission refusal, 4 when
-the install could not be reached, and 1 for everything else the install refused —
-a 400 or a 422 included, where it understood the request and said no. Branch on
-the body for those; it is the platform's own JSON, and an exit code shared with
-every other command cannot tell "your request was wrong" from "the platform tried
-and failed". A path with no leading slash is read as
+a path that matches no route, a 404, a 400 or a 409 `name_taken`; 3 for a
+credential or permission refusal and for any other 409 — the app's state
+refused; 4 when the install could not be reached; and 1 for the rest — a 5xx, a
+422, a 409 that is a wait (`deploy_queued`, `already_running`). Branch on the
+body's `code` for the detail; it is the platform's own JSON. A path with no leading slash is read as
 relative to `/api/v1/`; one with a leading slash is sent as written, so `toft api
 GET apps` and `toft api GET /api/v1/apps` are the same call. A path that matches
 no route on the install is exit **2** with `route_not_found` — a usage problem
