@@ -208,7 +208,9 @@ Go also gets a `go.work` naming it — **no require line is added to your
 because an app that brought its own SDK keeps it; ignore both in `.gitignore` or
 neither, since ignoring only `go.work` leaves a workspace on the platform naming
 a directory that did not ship. Python and Node need one install line, which the
-command prints.
+command prints. A vendored **Python** copy is added to `.gitignore`, so it stays
+on your machine and the platform installs its own; a **Node** copy ships,
+because `package.json` names it as a `file:` dependency.
 
 ### When the platform says no
 

@@ -59,7 +59,10 @@ printf '%s' "$TOFT_KEY" | toft login --token-stdin https://toft.corp
 
 **Flags come before the positional argument.** `toft login <url> --token-stdin`
 is refused, exit 2 — the flag would otherwise be dropped and you would be back
-in the device flow.
+in the device flow. **A word no command reads is refused too**, exit 2, rather
+than ignored. **A switch takes its value after `=`**: `--enabled=false`, never
+`--enabled false` — the second is a bare `--enabled` (true) followed by a stray
+word, and is refused by name.
 
 **A key has a scope, and a read-scoped one cannot deploy.** The scope is fixed
 when the key is minted and cannot be widened afterwards, so a read key is
@@ -121,7 +124,9 @@ toft rollback --yes               # back to the previous deployment
   `--repo <url>` creates from a repository instead and bundles nothing;
   `--subdir <folder>` with it builds one folder of a repository holding several
   apps, and the slug then defaults to the folder's name. `toft status` names the
-  folder.
+  folder. **The argument is a directory, not a name**: `toft create my-app`
+  with no `my-app/` here is exit 2 (`no_such_directory`) before anything is
+  printed, and names `--app my-app` — the spelling that sets the slug.
 - **`toft deploy`** bundles the working directory as it is, uncommitted edits
   included. It needs no git remote, no commit, not even a repository. It never
   creates an app — a missing link is exit 2 naming `toft link <slug>`.
@@ -142,7 +147,10 @@ toft rollback --yes               # back to the previous deployment
   `not_checked` says so — so a clean check is "these decisions pass", not "this
   will deploy". It costs an upload and saves a build. **It works before
   `toft create`**: with no app linked, or a slug nobody has claimed, it checks
-  the directory as a new app, behind the same doors a create has.
+  the directory as a new app, behind the same doors a create has. It names
+  the secret-looking files the bundle carries (`including .env`) as a deploy
+  does, and warns when `toft.toml` declares jobs and `toft whoami` says this
+  install runs none.
 - **`--verify <path>`** on `toft deploy`, `redeploy`, `rollback` and `create`
   requests that path as you once the platform says the deploy succeeded, and
   exits 1 unless it answers 2xx or 3xx. The platform's own readiness probe only
@@ -199,7 +207,7 @@ Afterwards:
 
 | | |
 |---|---|
-| `toft logs` | the app's runtime log — `--follow`, `--lines`, `--since 2h`, `--source app\|platform`. `--json` is one object per line: `at`, `source`, `stream`, `line`, and on exactly one line a `marker` |
+| `toft logs` | the app's runtime log — `--follow` (prints each line once, as it arrives), `--lines`, `--since 2h`, `--source app\|platform`. `--json` is one object per line: `at`, `source`, `stream`, `line`, and on exactly one line a `marker` |
 | `toft logs --deploy <id>` | one build's log instead. `--source` and `--since` are refused with it |
 | `toft events` | what the platform noticed going wrong — the command to run after a restart that did not take |
 | `toft status --json` | the app, the serving deployment, and the app's URL |
@@ -256,7 +264,11 @@ toft fetch /healthz --expect 200
 It resolves the app's address the same way `status` does, sends your key to
 that address only, and exits 1 for an answer that is not 2xx or 3xx. **The body
 is bounded** at `--max-body` bytes (8192; `0` for all), so a page of minified
-JavaScript does not land in your context to tell you the deploy worked.
+JavaScript does not land in your context to tell you the deploy worked. **When
+the platform answers in the app's place** — a stopped, locked or crashed app
+gets the gateway's 503 page — `fetch` prints the state instead of the page
+(`app is stopped — toft start --app <slug>`, exit 1), and `--json` names it as
+`platform_page`.
 
 The apps gateway takes the key as a bearer credential and authorizes you
 exactly as it would in a browser, which is also how to reach the app from
@@ -303,11 +315,23 @@ toft visibility                        # private | authenticated | public
 toft visibility authenticated
 toft deployments list                  # newest first, * is serving
 toft deployments prune --yes           # all but the serving one
+toft deployments delete 4f1a2b --yes   # a unique prefix (6+ characters) is enough
 toft delete my-app --yes               # the slug typed out; no undo
 ```
 
+- **A deployment id can be shortened to a unique prefix of six or more
+  characters** wherever one is taken — `toft deployments delete`, `toft logs
+  --deploy`, `toft rollback <id>`. A prefix that matches nothing or several is
+  exit 2 (`not_found`, `ambiguous_id`) naming the candidates.
+- **`toft rollback` names the release now serving** — the one it restored —
+  when it succeeds, in the summary and as `deployment_id` under `--json`. The
+  row the platform watches the switch through is deleted on success.
+
 - **Flags can go before or after the variables**: `toft env set A=1 --restart`
   is the same command as `toft env set --restart A=1`.
+- **A name is letters, digits and underscores, not starting with a digit**, and
+  `PORT`, `HOST` and `BASE_PATH` are the platform's to set. Both are exit 2
+  before anything is sent (`invalid_env_name`, `reserved_env_name`).
 - **An environment change applies at the next start**, not the next deploy:
   `toft restart`, or `--restart` on the same command. The document says
   `restart_needed`.
@@ -332,9 +356,16 @@ A contract, and the reason a failed run can be triaged without reading the log:
 |---|---|
 | 0 | it worked |
 | 1 | the platform did the thing and it failed — a failed build, a refused scan, a failed job run |
-| 2 | usage or configuration — no app linked, a bad flag, jobs not available on this install, a confirmation nothing could answer, **an app that is locked**, or **a name that does not resolve** |
+| 2 | usage or configuration — no app linked, a bad flag, an argument nothing reads, jobs not available on this install, a confirmation nothing could answer, **an app that is locked**, or **a name that does not resolve** (an unknown deployment id, task run, store, job or task) |
 | 3 | not authenticated, or refused — no credential, a revoked or expired key, uploads switched off, a license limit |
 | 4 | the install did not answer |
+
+Under `--json` an exit-2 refusal carries a `code` wherever one names the
+mistake: the install's own (`not_found` for an id or store that resolves to
+nothing, its validation code for a cron expression or time zone it refused), or
+this client's — `manifest_invalid` for a `toft.toml` that does not parse,
+`no_such_directory` for a directory argument that is not one, `invalid_method`
+and `invalid_overlap` for `toft task create|edit`.
 
 ## Running unattended
 
@@ -423,13 +454,20 @@ Two different things, and the CLI keeps them apart because the boundary is real:
 
   `toft task create <name> --schedule "0 9 * * *" --path /digest` is the whole of
   it; add `--timezone Europe/London` to read the schedule in a zone rather than
-  UTC (it then fires once per wall-clock time through daylight saving changes); `--schedule`, `--method`, `--overlap` and `--enabled` are optional.
+  UTC (it then fires once per wall-clock time through daylight saving changes); `--schedule`, `--method`, `--overlap` and `--enabled=false` are optional.
+  `toft task edit <name> --timezone <zone>` alone re-zones the schedule the task
+  already has, and every edit prints the task's state (`enabled`/`disabled`).
   **Without a schedule the task is on demand** — nothing fires it until
   `toft task run`, the Run button or the app asks for it — and `--schedule ""` on
   an edit takes a schedule away without touching the task or its history. **`toft task edit`
   sends only the fields you name**, so naming one leaves the rest alone.
   `toft task delete` asks first, because a task takes its run history with it —
-  pass `--yes` where nothing can answer.
+  pass `--yes` where nothing can answer. `toft task list` has a column saying
+  `enabled` or `disabled`, and `toft task runs` prints local times with the zone.
+  `toft task logs <runID> --task <name>` reads one run's log; the task name is
+  required because a run id alone does not say which task it belongs to. **A
+  task's log holds only what the app sent with the SDK's `task.log()`** — an
+  empty one says so, and what the app printed is in `toft logs`.
 
 **The two are created in different places, and only one of them here.** A job is
 declared in `toft.toml` and exists once the release is built — and a
@@ -481,6 +519,8 @@ toft store mkdir reports/2027                          # an empty folder
 toft store rm -r --yes reports/2025/                   # a folder and everything in it
 ```
 
+- **`toft store rm` resolves the store before it asks**, so a store you cannot
+  reach is exit 2 `not_found` rather than a refusal for `--yes`.
 - **Every object still moves on its own signed URL**, at the level you hold on
   that object, so a folder grant narrows `-r` exactly as it narrows `put`.
   `-j N` sets transfers at once (default 4). One failure does not stop the rest;
@@ -521,8 +561,6 @@ in the build log naming both, never a failed deploy.
 Nothing is published to a registry in any language, and that is deliberate: a
 published package is a second version, and you would then be building against
 whichever one your package manager resolved.
-  `toft task logs <runID> --task <name>` reads one run's log; the task name is
-  required because a run id alone does not say which task it belongs to.
 
 - **Go** also gets a `go.work` naming the vendored module. No require line is
   added to your `go.mod` — a workspace resolves the import without one. Both
@@ -530,12 +568,16 @@ whichever one your package manager resolved.
   that brought its own SDK keeps it. **Ignore both in `.gitignore` or neither**:
   ignoring only `go.work` leaves a workspace on the platform naming a directory
   that did not ship, and the build fails there while working here.
-- **Python**: `uv pip install -e .toft/sdk-python`.
-- **Node**: `"@larchway/toft": "file:.toft/sdk-node"` in `package.json`.
-- **R** is not vendored — the install serves the Go, Python and Node SDKs, and
-  `--lang r` is refused with `sdk_language_unknown`. The build installs the R
-  package into the release's library, and unlike Go there is no compile step
-  here to fail without it.
+- **Python**: `uv pip install -e .toft/sdk-python`. **The copy is added to
+  `.gitignore`** (unless a rule already covers it), so the next deploy does not
+  ship it — the platform installs its own. `--json` names the line as
+  `gitignore`.
+- **Node**: `"@larchway/toft": "file:.toft/sdk-node"` in `package.json`. That
+  dependency is why the copy **ships** and is not ignored: the build's `npm ci`
+  resolves it, and the platform then keeps the app's copy.
+- **R**: `R CMD INSTALL .toft/sdk-r` into the library you develop against. Like
+  Python's, the copy is added to `.gitignore` — the build installs the install's
+  own `toft` package into the release's library.
 
 Re-run it after the install is upgraded. Delete both paths to go back to the
 platform's own copy.
@@ -543,7 +585,9 @@ platform's own copy.
 ## The escape hatch: `toft api`
 
 `toft api <method> <path>` makes an authenticated call with the credential `toft`
-already holds, and prints the install's own JSON on stdout.
+already holds, and prints the install's own JSON on stdout — **a refusal's
+too**, with the exit code still non-zero and no second `--json` document beside
+it, so the install's `code` and `hint` are on stdout either way.
 
 ```bash
 toft api GET /api/v1/apps
