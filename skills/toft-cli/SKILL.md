@@ -59,6 +59,7 @@ printf '%s' "$TOFT_KEY" | toft login --token-stdin https://toft.corp
 
 **Flags may come before or after the positional argument**, in every command:
 `toft login <url> --token-stdin` and `toft link my-app --local` read the flag.
+`toft link my-app --app other` names two apps and is refused, exit 2.
 A word after `--` is an argument whatever it looks like. **A word no command reads is refused too**, exit 2, rather
 than ignored. **A switch takes its value after `=`**: `--enabled=false`, never
 `--enabled false` — the second is a bare `--enabled` (true) followed by a stray
@@ -152,8 +153,10 @@ toft rollback --yes               # back to the deployment before the serving on
   the directory as a new app, behind the same doors a create has, and so does
   `toft deploy --dry-run`. Its `--json` `warnings` are sentences, the same a
   deploy's result carries; `warning_details` gives each a `code`
-  (`manifest_unread`, `requires_python_excluded`) and, for a `toft.toml` key,
-  its `table`. It names
+  (`manifest_unread`) and, for a `toft.toml` key, its `table`. With no
+  `[runtime] python`, a `requires-python` that excludes the install's default
+  Python picks the newest one it allows (`runtime.requires_python` says so), and
+  one nothing satisfies is refused as `runtime_version`. It names
   the secret-looking files the bundle carries (`including .env`) as a deploy
   does, and warns when `toft.toml` declares jobs and `toft whoami` says this
   install runs none.
@@ -273,7 +276,9 @@ that address only, and exits 1 for an answer that is not 2xx or 3xx. A `..` or
 `.` segment in the path is refused before anything is sent (exit 2,
 `invalid_path`): a fetch stays inside the app. **The body
 is bounded** at `--max-body` bytes (8192; `0` for all), so a page of minified
-JavaScript does not land in your context to tell you the deploy worked. **When
+JavaScript does not land in your context to tell you the deploy worked. It waits
+`--timeout` for the answer (60s); an endpoint slower than that is better made
+asynchronous and polled than waited on. **When
 the platform answers in the app's place** — a stopped, locked or crashed app
 gets the gateway's 503 page — `fetch` prints the state instead of the page
 (`app is stopped — toft start --app <slug>`, exit 1), and `--json` names it as
@@ -409,7 +414,9 @@ English off stderr:
 answer when the refusal was the install's (a full job queue is `true` at 409; a
 503 that means "this install is configured without it" is `false`), and for a
 refusal `toft` made itself, `true` only when the install could not be reached —
-and not then when the host name does not resolve, which a retry cannot fix.
+and not then when the host name does not resolve, which a retry cannot fix. A
+proxy's own 502/503/504 page in front of the install (a redeploy, a restart) is
+`unreachable`, exit 4, never the page's HTML.
 `hint` is the next step in the install's words, when there is one — act on it
 rather than on the sentence. The sentence and the hint still go to stderr as
 well. A **failed deploy is the exception**: its result object already said
@@ -459,7 +466,9 @@ Two different things, and the CLI keeps them apart because the boundary is real:
   instant the run is for (a date or date-time with no offset is UTC); the run
   reads it as `TOFT_SCHEDULED_FOR`. A job runs in a container where the
   install has a cluster and on the install's own machine where it does not;
-  `toft job runs` says which, and the instant a run was for. `toft job list` prints
+  `toft job runs [name]` says which, and the instant a run was for; a name narrows
+  it to one job. `toft job cancel <runID>` on a run that already finished says
+  `already finished (<status>)`, exit 0, `"changed":false`. `toft job list` prints
   each job's schedule with its zone and any `expect_within` alert window.
   Where the install cannot run jobs for an app, `toft` says why as exit 2.
 - **`toft task list|create|edit|delete|run|runs|logs`** — a scheduled task is an
@@ -563,8 +572,9 @@ toft store rm -r --yes reports/2025/                   # a folder and everything
 - **`mv` is copy, then delete** — there is no rename in an object store. Each
   source goes only after its copy landed, so a move that fails partway leaves two
   copies, never none. Renaming needs `write` at the destination and `full` at the
-  source; at `write`, moving onto a name that exists is refused and changes
-  nothing.
+  source, and **a move short of either is refused up front**, exit 3, before
+  anything is copied. At `write`, moving or `put`ting onto a name that exists
+  is refused, exit 3, and changes nothing.
 - **A download never replaces a local file** unless you pass `--force` — `get`
   (with or without `-o`), `cp` and `mv` alike — and it checks the whole tree
   before transferring anything.

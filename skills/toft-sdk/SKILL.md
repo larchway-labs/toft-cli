@@ -152,8 +152,9 @@ work is its `[jobs]`. Restart and Stop answer `no_service` on one.
 
 **A job can send.** `toft.notify(...)` (email, Slack, any integration an
 administrator attached to the app) works inside a job, with the run's own
-credential; everything else on the app surface — `toft.data`, `toft.who`, starting
-another job — is refused from a job with `job_send_only`. Static apps may not declare jobs — there is no runtime in
+credential, and so does `toft.store(...)` on a store the app maps — over signed
+URLs where it is not mounted; everything else on the app surface — `toft.data`,
+`toft.who`, starting another job — is refused from a job with `job_send_only`. Static apps may not declare jobs — there is no runtime in
 which a command would mean anything — but scheduled tasks are fine, since those
 are HTTP requests to a path you published.
 
@@ -231,6 +232,10 @@ rule gets backwards. The SDK reports what the platform said, and falls back to
 429-and-5xx only when it said nothing: a network failure, a proxy's HTML page,
 an install older than the field. Log the `hint` beside the sentence; it is the
 part a person reading your logs acts on.
+
+A refusal the SDK makes itself, before any request, carries the same fields:
+`mine()` on the app acting as itself is `code: viewer_required`, `retryable:
+false` — call it on `viewer(headers).jobs`.
 
 The SDK's own single retry is narrower still: it covers a request that never
 reached a handler (a rate limit, a gateway), so the platform can veto it but a
@@ -376,6 +381,8 @@ on. A send never fails the request that triggered it.
 run = toft.jobs.start("reconcile", params={"month": "2026-03"})   # as the app
 run = run.wait(timeout=600)
 run.succeeded, run.output(), run.logs()
+run.output_json()          # what write_output_json() wrote, decoded; None if nothing
+                           # Node: await run.outputJson() · Go: run.OutputJSON(ctx, &v)
 ```
 
 A job is a different entrypoint of *this same app*, from the same release, in a
@@ -431,8 +438,9 @@ in those words.
 **A job holds no app token, and is told why** in all four languages. A run acts
 as the run; the calls it may make are the run's own, and a job reaching for the
 app's credential is a design question rather than a missing variable. The one
-exception is sending: a job may notify through its app's integrations, and every
-other app call is refused with `job_send_only`.
+exceptions are sending and storage: a job may notify through its app's
+integrations and reach the stores its app maps, and every other app call is
+refused with `job_send_only`.
 
 A task is an HTTP request the platform makes to a path you published — it owns
 no process, so `task.log(...)` is the only thing that makes that run's log
