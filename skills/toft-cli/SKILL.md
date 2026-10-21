@@ -85,13 +85,29 @@ refusal, not a precedence.
 `toft login --status` says who and where. `toft login --forget <install>` drops a
 stored credential (`--forget-all` drops every one); it does **not** revoke the key, and the command says so.
 
+**Ask before you try: `toft whoami`.** It names the account and its role, the
+credential (`api_key`, `deploy_key` or `session`, its scope and when it
+expires), whether you can create apps, and what the install allows — uploaded
+bundles, public apps, background jobs, and the interpreter versions a new app
+is judged against. Every one of those is otherwise learned from a refusal, so
+run it once before the first deploy. `--json` is the install's own
+`/me/capabilities` document with the identity beside it.
+
+**The skill you are reading came out of a binary.** `toft skill toft-cli` and
+`toft skill toft-sdk` print the copies embedded in the `toft` on your PATH, which
+describe exactly the commands it has. If this file and `toft --help` disagree,
+replace this file with `toft skill toft-cli`.
+
 ## The loop
 
 ```bash
 cd ~/code/my-app
+toft whoami                       # what this credential and install allow
+toft check                        # what a deploy would decide — no deploy
 toft create --yes --link          # claim a slug, deploy this tree into it
 # …edit files…
-toft deploy                       # push what is on disk now
+toft deploy --verify /            # push what is on disk now, then request /
+toft fetch /api/health            # one request to the app, as you
 toft status                       # what is serving, since when, from what
 toft logs --follow                # what the app said
 toft events                       # what the platform noticed
@@ -116,6 +132,26 @@ toft rollback --yes               # back to the previous deployment
   stopped; `toft stop` stops it.
 - **`toft apps`** lists the apps this credential can see, `--mine` for the ones it
   owns. It is how to find a slug you do not know.
+- **`toft check`** (or `toft deploy --dry-run`) sends the bundle `toft deploy`
+  would send and the install answers with the decisions a deploy makes before
+  it builds: what the app is, the interpreter it would get, the jobs and the
+  `toft.toml` tables nothing reads, and what unpacking removed. Nothing is
+  deployed or recorded. Exit 1 when a deploy would be refused, and each
+  problem carries the same `reason` key a failed deploy would. It does **not**
+  check the dependency policy, the build or the start — the answer's
+  `not_checked` says so — so a clean check is "these decisions pass", not "this
+  will deploy". It costs an upload and saves a build. **It works before
+  `toft create`**: with no app linked, or a slug nobody has claimed, it checks
+  the directory as a new app, behind the same doors a create has.
+- **`--verify <path>`** on `toft deploy`, `redeploy`, `rollback` and `create`
+  requests that path as you once the platform says the deploy succeeded, and
+  exits 1 unless it answers 2xx or 3xx. The platform's own readiness probe only
+  asks whether the process answers *something*; a page that throws on its first
+  real request passes that and fails this. A 5xx or a refused connection is
+  retried for `--verify-timeout` (30s); a 404 is an answer and is not. Under
+  `--json` it is a `verify` object inside the one result document.
+- **`toft env`**, **`toft visibility`**, **`toft deployments`** and **`toft
+  delete`** are the app's settings and history — see Changing the app.
 
 ## Watching a build, and reading it afterwards
 
@@ -207,8 +243,24 @@ install serves deployed apps on a second origin.
 
 A new app is private, and private means the same thing to a script as to a
 browser: an anonymous GET answers `authentication required`. **Your own key is
-the way in.** The apps gateway takes it as a bearer credential and then
-authorizes you exactly as it would in a browser:
+the way in**, and `toft fetch` is the way to send it without holding it:
+
+```sh
+toft fetch /                    # status line, then the body (8 KiB of it)
+toft fetch /api/items --json    # {url, status, headers, body, bytes, truncated}
+toft fetch /api/items --method POST --data @item.json --header 'Content-Type: application/json'
+toft fetch / --anonymous        # what a stranger sees
+toft fetch /healthz --expect 200
+```
+
+It resolves the app's address the same way `status` does, sends your key to
+that address only, and exits 1 for an answer that is not 2xx or 3xx. **The body
+is bounded** at `--max-body` bytes (8192; `0` for all), so a page of minified
+JavaScript does not land in your context to tell you the deploy worked.
+
+The apps gateway takes the key as a bearer credential and authorizes you
+exactly as it would in a browser, which is also how to reach the app from
+anything other than `toft`:
 
 ```sh
 URL=$(toft status --json | jq -r .url)
@@ -240,6 +292,38 @@ script from somewhere else would send your key there too. If the app is not
 self-contained, scope it with a request interceptor.
 
 
+## Changing the app
+
+```bash
+toft env list                          # names; values that are not sensitive
+toft env set DATABASE_URL=postgres://… # one or more KEY=VALUE; others are kept
+toft env set API_TOKEN=… --sensitive   # write-only: never shown again
+toft env unset DEBUG --restart         # --restart applies it now
+toft visibility                        # private | authenticated | public
+toft visibility authenticated
+toft deployments list                  # newest first, * is serving
+toft deployments prune --yes           # all but the serving one
+toft delete my-app --yes               # the slug typed out; no undo
+```
+
+- **Flags can go before or after the variables**: `toft env set A=1 --restart`
+  is the same command as `toft env set --restart A=1`.
+- **An environment change applies at the next start**, not the next deploy:
+  `toft restart`, or `--restart` on the same command. The document says
+  `restart_needed`.
+- **`toft env set` keeps every other variable**, sensitive ones included — the
+  route replaces the whole map, and the command writes back what it read.
+  A credential that may see the names but not the values is refused before
+  anything is written (exit 3). A variable an administrator attached through a
+  credential cannot be set here, and the refusal names the credential.
+- **`toft visibility public`** can be refused by the install (`code:
+  "public_apps_disabled"`) or by its license (`not_licensed`); `toft whoami`
+  says in advance whether it is allowed.
+- **A pruned deployment is no longer a rollback target.** The serving release,
+  a running build and a rollback's source are never deleted.
+- **`toft delete` never takes the slug from `toft.toml` or `TOFT_APP`** — it has to
+  be typed — and it asks, so unattended it needs `--yes`.
+
 ## Exit codes
 
 A contract, and the reason a failed run can be triaged without reading the log:
@@ -267,13 +351,27 @@ having already written a result object writes one instead of leaving you to pars
 English off stderr:
 
 ```json
-{"error":"that key has expired","kind":"auth","code":"key_expired","exit":3}
+{"error":"that key has expired","kind":"auth","code":"key_expired","exit":3,
+ "retryable":false,"hint":"mint a new key — `toft login` replaces the stored one; retrying will not help"}
 ```
 
 `kind` is the client's classification — `usage`, `auth`, `unreachable`, `locked`,
-`failed` — and `code` is the install's own, present only when it sent one. The
-sentence still goes to stderr as well. A **failed deploy is the exception**: its
-result object already said everything, so there is no second document.
+`failed` — and `code` is the install's own, present only when it sent one.
+**`retryable` is always there and is the field to branch on**: the install's own
+answer when the refusal was the install's (a full job queue is `true` at 409; a
+503 that means "this install is configured without it" is `false`), and for a
+refusal `toft` made itself, `true` only when the install could not be reached.
+`hint` is the next step in the install's words, when there is one — act on it
+rather than on the sentence. The sentence and the hint still go to stderr as
+well. A **failed deploy is the exception**: its result object already said
+everything, so there is no second document. So is a **failed `fetch`,
+`check` or `--verify`**: the result document is the answer, and the exit code
+says it failed.
+
+**The install's API speaks the same envelope.** Every refusal from `toft api`,
+from `curl`, or from the SDK inside your app is `{"error", "code",
+"retryable", "hint"?}`. `code` is never absent — a refusal whose route named
+none carries the status's name (`not_found`, `conflict`, `internal`).
 
 ## What goes in the bundle
 
@@ -493,13 +591,10 @@ with `toft api`, which is the point of the column on the right:
 
 | | |
 |---|---|
-| Environment variables | Not in the CLI. Set them on the app's Settings page, or `PATCH /api/v1/apps/{id}` with `env_vars`. A restart applies them; a redeploy is not required |
-| Making an app public | Not in the CLI. `visibility` on the same PATCH, or the Settings page. A newly created app is private, so an *anonymous* fetch of its URL answers `authentication required` — that is the app working, not a broken deploy, and your own key fetches it (see Looking at the app) |
-| Deleting an app | Not in the CLI |
+| An app's name, slug, branch, embedding origins or listing | Not in the CLI. `PATCH /api/v1/apps/{id}` with the field, or the Settings page. Environment variables and visibility have verbs: `toft env`, `toft visibility` |
 | Creating, editing or deleting a scheduled task | `toft task create\|edit\|delete`, with a full personal key |
 | A notebook's re-render schedule | Not in the CLI, and not a scheduled task — it produces a new rendered release rather than calling a path. The Automation tab, or `PUT`/`DELETE /api/v1/apps/{id}/render-schedule` |
 | An app's tags | Not in the CLI. `PUT /api/v1/apps/{id}/tags` with the ids of tags that already exist; creating the tags themselves is an administrator's |
-| Pruning old deployments | Not in the CLI. `DELETE /api/v1/apps/{id}/deployments` drops every deployment but the serving one, and `DELETE .../deployments/{deployID}` drops one. A pruned deployment is no longer a rollback target |
 | Grants, storage mappings, integrations | Administrator surfaces, in the UI or the API |
 | Publishing from RStudio | Not `toft`'s: RStudio's *Add account* takes the install's address as a Posit Connect server, signs in through the same approval page as `toft login`, and publishes with rsconnect. Its routes are under `/__api__`; an agent deploys with `toft` |
 

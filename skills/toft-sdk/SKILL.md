@@ -210,12 +210,39 @@ neither, since ignoring only `go.work` leaves a workspace on the platform naming
 a directory that did not ship. Python and Node need one install line, which the
 command prints.
 
+### When the platform says no
+
+Every refusal carries the platform's own sentence and three fields beside it,
+and **branch on the fields, never on the sentence** — the wording is for a
+person and may change.
+
+| | Python / Node | Go | R |
+|---|---|---|---|
+| **`code`** — a stable name, never empty from a current install (`queue_full`, `not_found`, `app_locked`) | `err.code` | `err.Code()` | `e$code` |
+| **`retryable`** — whether trying again could work | `err.retryable` | `err.Retryable()` | `e$retryable` |
+| **`hint`** — the next step, when there is one (`"mint a new key"`) | `err.hint` (None / undefined) | `err.Hint()` (`""`) | `e$hint` (NULL) |
+
+**`retryable` is the platform's decision, not the status's.** Only the handler
+knows that a 503 means "this install is configured without it", which no retry
+fixes, or that a 409 means "a run is in flight, wait" — the two answers a status
+rule gets backwards. The SDK reports what the platform said, and falls back to
+429-and-5xx only when it said nothing: a network failure, a proxy's HTML page,
+an install older than the field. Log the `hint` beside the sentence; it is the
+part a person reading your logs acts on.
+
+The SDK's own single retry is narrower still: it covers a request that never
+reached a handler (a rate limit, a gateway), so the platform can veto it but a
+retryable 4xx is left to your loop, honoring `retry_after` / `retryAfter` /
+`RetryAfter` when sent. In R the refusal is a condition of class `toft_error`,
+so `tryCatch(..., toft_error = function(e) ...)` catches the platform's
+refusals and nothing else; its message is unchanged.
+
 ### Go reads a little differently, on purpose
 
 | | |
 |---|---|
 | **A context on everything that touches the network** | `toft.App.Can(ctx, "email")`, `toft.Notify.Slack(ctx, text)`, `toft.Jobs.Start(ctx, ...)`. Your handler already has one, and an SDK call should not be the thing in it that cannot be cancelled |
-| **Errors, not exceptions** | `*toft.Error` carries the status, the platform's own words and the decoded body. `errors.As` reaches `*toft.QueueFullError` (`InFlight`, `Limit`) and `*toft.VersionConflictError` (`Version`) |
+| **Errors, not exceptions** | `*toft.Error` carries the status, the platform's own words, `Code()`, `Retryable()`, `Hint()` and the decoded body. `errors.As` reaches `*toft.QueueFullError` (`InFlight`, `Limit`) and `*toft.VersionConflictError` (`Version`) |
 | **Options are structs** | `toft.EmailMessage{To: …, Subject: …, Text: …}`, `toft.StartOptions{Params: …}`, `toft.SlackFileOptions{Title: …}` — Go has no keyword arguments |
 | **`toft.ViewerFor(r.Header)` / `toft.Who(ctx, r.Header)`** | the first errors when there is nobody to act for; the second answers `nil, nil`, because an anonymous visitor is an answer |
 | **`toft.TaskFor(r.Header)` may be nil, and a nil one still logs** | `task.Log(ctx, …)` on a nil `*toft.Task` does nothing and says so, so an endpoint serving both a schedule and a person needs no branch |
