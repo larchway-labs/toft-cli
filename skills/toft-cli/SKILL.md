@@ -330,7 +330,13 @@ toft fetch /api/items --json    # {url, status, headers, body, bytes, truncated}
 toft fetch /api/items --method POST --data @item.json --header 'Content-Type: application/json'
 toft fetch / --anonymous        # what a stranger sees
 toft fetch /healthz --expect 200
+toft fetch /x/respond --no-follow   # the 303 itself, not where it leads
 ```
+
+**A redirect is followed and said**: each hop is printed before the answer
+(`303 See Other  …/x/respond → …/__toft/runs/<id>`), and `--json` carries
+`redirects` (status, url, location each) and `final_url` beside `url`, the
+address requested. `--no-follow` answers with the redirect itself.
 
 It resolves the app's address the same way `status` does, sends your key to
 that address only, and exits 1 for an answer that is not 2xx or 3xx. A `..` or
@@ -539,7 +545,9 @@ ships them with the code. Jobs are on by default.
   run each.
 - **`toft job run <name>`** starts a run and waits for it; the run's outcome is
   the exit code — **`--json` included**, where a run that did not succeed prints
-  the run document *and then* the refusal, two lines, exit 1. While it waits it
+  the run document *and then* the refusal, two lines, exit 1 — the refusal's
+  `code` is the run's ending (`failed`, `timed_out`, `out_of_memory`,
+  `cancelled`). While it waits it
   says where the run stands (`queued · 2nd`, `running · 4m · 40% loading
   rows`); `--follow` streams the run's log as well. `--param k=v` repeats, is
   never parsed into a command, and is held to the job's declared type and
@@ -564,7 +572,9 @@ ships them with the code. Jobs are on by default.
   for; **`toft job runs <runID>`** is one run in full — status, reason, limits,
   peak memory, `rerun_of` — and the one command worth typing next. **`toft job
   logs <runID>`** is what the run printed; `--follow` keeps reading until it
-  ends. **`toft job cancel <runID>`** stops one; on a run that already finished
+  ends. **`toft job output <runID>`** is what it wrote with `write_output` — the
+  bytes, text or JSON, to stdout or `-o <file>` (the SDKs' `run.output()`); a run
+  that wrote none is `no_output`, one whose object is gone `output_expired`. **`toft job cancel <runID>`** stops one; on a run that already finished
   it says `already finished (<status>)`, exit 0, `"changed":false`. A run id may
   be the eight characters `toft job runs` prints.
 
@@ -576,7 +586,8 @@ printed unasked. `skipped` is a scheduled run that `overlap = "skip"` stood down
 because the previous one was still going — it did no work, so it is not a
 success. A full queue (`queue_full`) is exit 1 and retryable; a job the app does
 not declare (`no_such_job`) or a param it refuses (`param_type`,
-`param_choice`) is exit 2. Where the install cannot run jobs for this app,
+`param_choice`, `param_unknown` for a name a job with declared params does not
+declare) is exit 2. Where the install cannot run jobs for this app,
 `toft` says why as exit 2 (`jobs_unavailable`).
 
 **`toft task` is gone.** Scheduled tasks were replaced by jobs: it refuses with
@@ -743,7 +754,10 @@ GET apps` and `toft api GET /api/v1/apps` are the same call. A path that matches
 no route on the install is exit **2** with `route_not_found` — a usage problem
 either way, whether the path was mistyped or the install is older than the verb.
 A route that exists but not for that method is exit **2** with
-`method_not_allowed`, and its hint names the method it takes.
+`method_not_allowed`, and its hint names the method it takes. **`apps/` paths
+take the app's id, never its slug**: `toft status --json` gives `.app.id`, and
+`toft api GET apps/by-slug/<slug>` answers with the app — a 404 on
+`apps/<slug>` says so in its hint.
 
 **On Windows, prefer the relative form.** Git Bash and every other MSYS shell
 rewrite an argument that starts with a slash into a Windows path *before* `toft`

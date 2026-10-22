@@ -158,8 +158,10 @@ choices  = ["emea", "amer", "apac"]
 A job declared here versions with the code it runs, and a rollback takes the
 command back with it. **Declared parameters are enforced when a run starts**:
 a missing `required` one is refused `param_required`, a value of the wrong
-`type` `param_type`, one outside `choices` `param_choice` (all 400, never
-retryable), and a `default` fills an absent one. `--param` sends strings, so
+`type` `param_type`, one outside `choices` `param_choice`, and a name the job
+does not declare `param_unknown` (all 400, never retryable), and a `default`
+fills an absent one. A job that declares no params takes any, a list or an
+object included — the declared types are scalars. `--param` sends strings, so
 `rows=500` satisfies `type = "int"`, and the run still receives an int.
 
 **Three keys are refused rather than ignored**, with `removed_key` and the
@@ -327,7 +329,8 @@ not the app's configured setting — so it is right on the first request rather
 than after the next restart.
 
 ```js
-await toft.app.slug();  await toft.app.basePath();  await toft.app.can("slack");
+toft.app.id;  toft.app.slug;                       // properties, no call, no await
+await toft.app.basePath();  await toft.app.mode();  await toft.app.can("slack");
 ```
 
 **R has a smaller surface**: `app_info()` and `app_base_path()` for the app's own
@@ -340,12 +343,13 @@ other languages. **Headers come as the framework hands them**: a plumber route's
 `req$HEADERS` and a Shiny app's `session$request` (CGI-named,
 `HTTP_X_TOFT_ACT_FOR`) both work for `viewer()` and `caller_role()`.
 
-**In Node these are async methods, and forgetting that does not fail.**
-`toft.app.id` without the call and the `await` is a Promise, and a template that
-interpolates one renders `[object Promise]` — a page that looks deployed and is
-wrong, on the fact an app is most likely to put in its own header. Python
-exposes the same values as plain properties, so the shapes differ by language
-and only one of them tells you. Run your entrypoint off-platform once before the
+**In Node `id` and `slug` are properties and the rest are async methods.**
+The two the platform puts in the environment are plain strings — `toft.app.id()`
+is a `TypeError`, and `await toft.app.slug` still works, since awaiting a string
+is the string. `name()`, `mode()`, `basePath()`, `policy()`, `capabilities()`
+and `can()` are one cached request and async, and forgetting the `await` does not
+fail: a template that interpolates one renders `[object Promise]` — a page that
+looks deployed and is wrong. Run your entrypoint off-platform once before the
 first deploy: it is the only check that finds this.
 
 `base_path` / `basePath()` / `BasePath` / `app_base_path()` answers the same
@@ -493,7 +497,10 @@ timeout, or a timeout past that deadline, is refused at once with
 fits is allowed. The SDK sees the request through `viewer(headers)` (every run
 started through it carries the deadline), an explicit `headers=` / `headers` /
 `WaitOptions{Request}` / `request =` on the wait, and in Python Flask's current
-request.
+request. Reading a run spends a bucket of its own (600 a minute) rather than
+the app's 60, and a poll the rate limit still refuses is waited out
+(Retry-After) and the wait goes on — `rate_limited` never ends a wait, in any of the four SDKs;
+`tail` does the same.
 
 ```python
 run = toft.jobs.start("reconcile", params={"month": "2026-03"})   # as the app, in a script
