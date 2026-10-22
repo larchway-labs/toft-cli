@@ -710,6 +710,8 @@ relative to `/api/v1/`; one with a leading slash is sent as written, so `toft ap
 GET apps` and `toft api GET /api/v1/apps` are the same call. A path that matches
 no route on the install is exit **2** with `route_not_found` — a usage problem
 either way, whether the path was mistyped or the install is older than the verb.
+A route that exists but not for that method is exit **2** with
+`method_not_allowed`, and its hint names the method it takes.
 
 **On Windows, prefer the relative form.** Git Bash and every other MSYS shell
 rewrite an argument that starts with a slash into a Windows path *before* `toft`
