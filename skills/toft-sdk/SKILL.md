@@ -149,7 +149,10 @@ required = true
 ```
 
 A job declared here versions with the code it runs, and a rollback takes the
-command back with it.
+command back with it. **Declared parameters are enforced when a run starts**:
+a missing `required` one is refused `param_required`, a value of the wrong
+`type` `param_type` (both 400, never retryable), and a `default` fills an
+absent one. `--param` sends strings, so `rows=500` satisfies `type = "int"`.
 
 **A Go job runs the binary the build made, which is `./toft-app`** — the build
 is `go build -o toft-app`, and a job should not compile anything. One binary
@@ -246,7 +249,11 @@ part a person reading your logs acts on.
 
 A refusal the SDK makes itself, before any request, carries the same fields:
 `mine()` on the app acting as itself is `code: viewer_required`, `retryable:
-false` — call it on `viewer(headers).jobs`. So do the storage refusals, in all four
+false` — call it on `viewer(headers).jobs`. `viewer(headers)` with nobody
+signed in is `no_viewer`; an argument the SDK rejects locally (an email with no
+recipient, blank text, an empty send or session id, app data that is not an
+object) is `bad_request`; a run's input is `input_not_given` or `input_expired`,
+and `write_output` with no location `no_output` — all `retryable: false`. So do the storage refusals, in all four
 languages: `not_mapped` (no resource by that name), `ambiguous_mount` (one name
 mounted twice and no folder named), `not_mounted` (`.path`/`put` on a store
 reached over signed URLs), `insufficient_access`, `already_exists` (an existing
