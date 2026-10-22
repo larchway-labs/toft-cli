@@ -1,6 +1,6 @@
 ---
 name: toft-sdk
-description: Write an app that runs on Toft — what the platform sets in its environment, how it is detected and built, what `toft.toml` declares, and the Toft app SDK for Python, Node, Go and R (`toft.app.can`, scratch and storage, the app's JSON document, Slack and email, background jobs, who the viewer is, a scheduled task's log). Load it when writing or fixing code that will be deployed to Toft, when an app works locally and misbehaves once deployed, or when an app needs to send a notification, store a file, or start background work.
+description: Write an app that runs on Toft — what the platform sets in its environment, how it is detected and built, what `toft.toml` declares, and the Toft app SDK for Python, Node, Go and R (`toft.app.can`, scratch and storage, the app's JSON document, Slack and email, background jobs and their status page, who the viewer is). Load it when writing or fixing code that will be deployed to Toft, when an app works locally and misbehaves once deployed, or when an app needs to send a notification, store a file, or start background work.
 ---
 
 # Writing an app for Toft
@@ -94,7 +94,7 @@ R has four of its own, and the first is the one that costs a deploy:
 Two more that are about behaviour rather than the build. **Shiny and plumber are
 one R process**, single-threaded: a reactive that takes four seconds is a
 four-second queue for every viewer at once, so slow work belongs in a job the
-page polls for. And **a document is rendered once, at build time** — there is no
+request hands to `job_respond()`. And **a document is rendered once, at build time** — there is no
 R behind the page, a re-render is a deploy rather than a restart, and whatever a
 chunk prints is published to everyone who can read the page.
 
@@ -105,8 +105,10 @@ venv or its R library like any other. So `[jobs]` in `toft.toml` works on an
 `.Rmd`, a `.qmd` and an `.ipynb`, and inside that job the SDK is fully present —
 `toft.run` is populated, `toft.mounts()` answers, and the job may write to storage.
 It is the one way a document app does anything after its build. What it cannot do
-is see a request: no viewer identity, no task the app can observe, because
-nothing here serves a request — the platform serves the rendered file.
+is see a request: no viewer identity and no button that starts a run, because
+nothing here serves a request — the platform serves the rendered file. A
+`schedule` on the job, `toft job run` and the Run button in Toft are how its
+runs start.
 
 **`static` is the exception that really has none.** A `[jobs]` table in a static
 tree is refused before anything is built, with `manifest_invalid` and the reason:
@@ -119,11 +121,13 @@ top-level tables are ignored, so it is safe to share with the CLI's `[app]` and
 the platform's `[static]`.
 
 **Ignored is not unnoticed: the build log names every table and key nothing
-read.** Only `[jobs]` is read here — a `[tasks]` table declares no schedule, and
-a misspelled key inside a job is a limit that stayed at its default. Neither
-fails the deploy, so **check the build log rather than reading a green deploy as
-proof the thing you declared exists**. Scheduled tasks are made with
-`toft task create`, not from this file.
+read**, and a misspelled key inside a job is a limit that stayed at its default.
+That does not fail the deploy, so **check the build log rather than reading a
+green deploy as proof the thing you declared exists**.
+
+**Jobs are declared here and nowhere else.** There is no scheduled-task feature
+and no way to create a job from the UI or the CLI: a `[jobs.<name>]` table is
+the job, with or without a schedule.
 
 ```toml
 [app]
@@ -135,25 +139,45 @@ entry    = "report.html"      # what the app's URL serves
 fallback = true               # client-side routing
 
 [jobs.nightly-report]
-command  = "python -m reports.nightly"
-schedule = "0 3 * * *"        # optional; omit for a job you start yourself
+command  = "python -m reports.nightly"   # or args = [...] — Go's single binary only
+timeout  = "45m"              # a duration, or whole seconds; omitted is the install default
+memory   = 1024               # MB; omitted is the install default
+schedule = "0 3 * * *"        # optional; omit for a job something starts
 timezone = "Europe/London"    # optional; the schedule is UTC without it
-timeout  = 1800
-memory   = 1024
-retries  = 2                  # off by default
+overlap  = "skip"             # skip | queue (the default); only with a schedule
 expect_within = "26h"         # optional; owners are told if it goes this long without succeeding
-viewer_runnable = true        # a viewer may start it
+notify   = "failures"         # none (the default) | failures | always
 
 [jobs.nightly-report.params.region]
-type     = "string"
-required = true
+type     = "string"           # string | int | float | bool
+default  = "emea"             # or required = true — never both
+help     = "Which region to report on"
+choices  = ["emea", "amer", "apac"]
 ```
 
 A job declared here versions with the code it runs, and a rollback takes the
 command back with it. **Declared parameters are enforced when a run starts**:
 a missing `required` one is refused `param_required`, a value of the wrong
-`type` `param_type` (both 400, never retryable), and a `default` fills an
-absent one. `--param` sends strings, so `rows=500` satisfies `type = "int"`.
+`type` `param_type`, one outside `choices` `param_choice` (all 400, never
+retryable), and a `default` fills an absent one. `--param` sends strings, so
+`rows=500` satisfies `type = "int"`, and the run still receives an int.
+
+**Three keys are refused rather than ignored**, with `removed_key` and the
+replacement in the hint: `retries` (a run is never retried — a person reruns
+it), `viewer_runnable` (the app's own button decides who may start a run) and
+`enabled` (pausing a schedule is done in Toft, until the next deploy). A
+`[tasks]` table is refused the same way. **A `timeout` or `memory` above the
+install's ceiling is refused** at `toft check` and at the deploy,
+`limit_exceeds_ceiling`, with the largest value that fits in the hint. `toft
+check` prints each job's effective limits and where each came from —
+`declared`, `install default`, or `clamped` when an administrator lowered the
+ceiling under a job already deployed.
+
+**`overlap = "skip"`** stands a scheduled run down when the previous one is
+still going: it is recorded as a `skipped` run rather than not at all.
+**`notify`** tells the app's owners about every failed run (`failures`) or
+every finished run (`always`), beyond the one alert a failing job raises anyway;
+skipped and cancelled runs say nothing.
 
 **A Go job runs the binary the build made, which is `./toft-app`** — the build
 is `go build -o toft-app`, and a job should not compile anything. One binary
@@ -165,13 +189,15 @@ serves both entrypoints, so dispatch on the arguments:
 project file): the deploy installs dependencies, starts nothing, and the app's
 work is its `[jobs]`. Restart and Stop answer `no_service` on one.
 
+**Jobs run without a cluster.** Where the install has one, each run is a
+container of its own; where it does not, a process on the install's own machine,
+with the same timeout, memory limit and record. `toft job list` says which.
+
 **A job can send.** `toft.notify(...)` (email, Slack, any integration an
 administrator attached to the app) works inside a job, with the run's own
 credential, and so does `toft.store(...)` on a store the app maps — over signed
 URLs where it is not mounted; everything else on the app surface — `toft.data`,
-`toft.who`, starting another job — is refused from a job with `job_send_only`. Static apps may not declare jobs — there is no runtime in
-which a command would mean anything — but scheduled tasks are fine, since those
-are HTTP requests to a path you published.
+`toft.who`, starting another job — is refused from a job with `job_send_only`.
 
 ## The SDK
 
@@ -249,15 +275,16 @@ an install older than the field. Log the `hint` beside the sentence; it is the
 part a person reading your logs acts on.
 
 A refusal the SDK makes itself, before any request, carries the same fields:
-`mine()` on the app acting as itself is `code: viewer_required`, `retryable:
-false` — call it on `viewer(headers).jobs`. `viewer(headers)` with nobody
-signed in is `no_viewer`; an argument the SDK rejects locally (an email with no
-recipient, blank text, an empty send or session id, app data that is not an
-object) is `bad_request`; a run's input is `input_not_given` or `input_expired`,
-and `write_output` with no location `no_output` — all `retryable: false`. A
+`mine()` on the app acting as itself, and `viewer(headers)` with nobody signed
+in, are both `no_viewer`; a `wait()` that would outlive the request being served
+is `would_outlive_request`, hint `return toft.jobs.respond(run)`; an argument
+the SDK rejects locally (an email with no recipient, blank text, an empty send
+or session id, app data that is not an object) is `bad_request`; and
+`write_output` with no location is `no_output` — all `retryable: false`. A
 run's `wait()` that runs out is `wait_timeout`, `retryable: true` — the run is
-still going (Python raises the built-in `TimeoutError`; a cancelled Go context
-is `wait_cancelled`). So do the storage refusals, in all four
+still going (Python's is also a `TimeoutError`; a cancelled Go context is
+`wait_cancelled`). A start into a full queue is `queue_full`, `retryable: true`,
+with `retry_after`. So do the storage refusals, in all four
 languages: `not_mapped` (no resource by that name), `ambiguous_mount` (one name
 mounted twice and no folder named), `not_mounted` (`.path`/`put` on a store
 reached over signed URLs), `insufficient_access`, `already_exists` (an existing
@@ -284,7 +311,7 @@ refusals and nothing else; its message is unchanged.
 | **Errors, not exceptions** | `*toft.Error` carries the status, the platform's own words, `Code()`, `Retryable()`, `Hint()` and the decoded body. `errors.As` reaches `*toft.QueueFullError` (`InFlight`, `Limit`) and `*toft.VersionConflictError` (`Version`) |
 | **Options are structs** | `toft.EmailMessage{To: …, Subject: …, Text: …}`, `toft.StartOptions{Params: …}`, `toft.SlackFileOptions{Title: …}` — Go has no keyword arguments |
 | **`toft.ViewerFor(r.Header)` / `toft.Who(ctx, r.Header)`** | the first errors when there is nobody to act for; the second answers `nil, nil`, because an anonymous visitor is an answer |
-| **`toft.TaskFor(r.Header)` may be nil, and a nil one still logs** | `task.Log(ctx, …)` on a nil `*toft.Task` does nothing and says so, so an endpoint serving both a schedule and a person needs no branch |
+| **`toft.Jobs.Respond(w, r, run)`** | writes the 303 or the 202 itself; return after it |
 | **`toft.CurrentRun()`** | the job's view of itself, `nil` everywhere else |
 | **Numbers come back as `float64`** | anything read out of `toft.Data`'s map has been through JSON. Unmarshal `Document.Data` into a struct of your own when you want your types back |
 
@@ -393,8 +420,11 @@ toft.data.update(lambda s: s.update(runs=s.get("runs", 0) + 1))   # against a se
 
 Both writes hand back the document they wrote — `doc.data` is what you saved,
 not `None` — so a caller does not need a second read to see its own change.
-`update` re-reads under a version conflict and waits out the app's rate limit
-(60 calls a minute, burst 10) within its attempts; in R, which has no
+`update` re-reads under a version conflict, within its attempts (five by
+default), and waits out the app's rate limit (60 calls a minute, burst 10)
+without spending them — up to 30 waits, past which it raises the `rate_limited`
+refusal itself, with `retry_after`. A give-up after conflicts carries
+`version_conflict`, in Go as in Python and Node. In R, which has no
 `update`, a get-then-set under several writers can lose one.
 
 One JSON document per app, 256 KiB, no keys and no queries — it survives
@@ -416,27 +446,102 @@ on. A send never fails the request that triggered it.
 
 ### Background work
 
+A job is a different entrypoint of *this same app*, from the same release, with
+its own timeout, memory limit and record. Starting one returns as soon as the run
+is queued. **A web handler answers the request with `respond(run)` and never
+waits:**
+
 ```python
-run = toft.jobs.start("reconcile", params={"month": "2026-03"})   # as the app
-run = run.wait(timeout=600)
-run.succeeded, run.output(), run.logs()
-run.output_json()          # what write_output_json() wrote, decoded; None if nothing
-                           # Node: await run.outputJson() · Go: run.OutputJSON(ctx, &v)
+@app.post("/reports")
+def make_report():
+    me = toft.viewer(request.headers)                     # the person clicking
+    run = me.jobs.start("nightly-report", params={"region": "emea"})
+    return toft.jobs.respond(run)                         # 303 to the status page, or 202
+```
+```js
+const run = await toft.viewer(req.headers).jobs.start("nightly-report", { params: { region: "emea" } });
+return toft.jobs.respond(run, req);   // a Fetch Response; Express: send its status, headers and text
+```
+```go
+run, err := me.Jobs.Start(r.Context(), "nightly-report", toft.StartOptions{Params: params})
+toft.Jobs.Respond(w, r, run)
+```
+```r
+#* @post /reports
+function(req, res) {
+  run <- viewer_jobs(req) |> job_start("nightly-report", params = list(region = "emea"))
+  job_respond(run)
+}
 ```
 
-A job is a different entrypoint of *this same app*, from the same release, in a
-container with its own memory limit and deadline. It never blocks on the work.
+**`respond` sends a browser to the run's live status page** — `303 See Other`
+to `run.status_url`, `/apps/<slug>/__toft/runs/<id>`, which Toft's gateway
+serves on the app's own origin: the job, its progress bar and message, its place
+in the queue, the outcome and the reason in words. The app writes no polling
+code and no template. Anything that does not ask for HTML gets `202 Accepted`,
+`Location` the same URL, and the run as JSON; the same URL asked for JSON
+answers `{id, job, status, progress, progress_message, queue_position,
+failure_reason, started_at, finished_at, done}`. In Python, Flask gets a
+`flask.Response` and FastAPI/Starlette one when given the request
+(`respond(run, request=request)`).
 
-Inside the job, `toft.run.scheduled_for` (Node `run.scheduledFor`, Go
-`run.ScheduledFor()`, R `scheduled_for()`) is **the instant this run is for**:
-the schedule tick it fired for, in the schedule's zone, even when it started
-late — or the time somebody named with `toft job run --for`. It is `None` when
-nobody gave one, never *now*, so a re-run of Tuesday's work processes Tuesday.
+**`wait()` is for scripts, notebooks and one job waiting on another.** Every
+request the gateway forwards carries `X-Toft-Request-Deadline`, when it will be
+cut off (five minutes by default), and a `wait()` inside a request with no
+timeout, or a timeout past that deadline, is refused at once with
+`would_outlive_request` — instead of a 504 nobody can explain. A short wait that
+fits is allowed. The SDK sees the request through `viewer(headers)` (every run
+started through it carries the deadline), an explicit `headers=` / `headers` /
+`WaitOptions{Request}` / `request =` on the wait, and in Python Flask's current
+request.
+
+```python
+run = toft.jobs.start("reconcile", params={"month": "2026-03"})   # as the app, in a script
+run = run.wait(timeout=600)
+run.succeeded, run.status, run.failure_reason, run.output(), run.logs()
+run.output_json()          # what write_output_json() wrote, decoded; None if nothing
+```
+
+| | Python | Node | Go | R |
+|---|---|---|---|---|
+| start | `jobs.start(job, params=, idempotency_key=)` | `jobs.start(job, { params, idempotencyKey })` | `Jobs.Start(ctx, job, StartOptions{Params, IdempotencyKey})` | `job_start(job, params =, idempotency_key =)` |
+| answer the request | `jobs.respond(run)` | `jobs.respond(run, req)` | `Jobs.Respond(w, r, run)` | `job_respond(run)` |
+| wait | `run.wait(timeout=)` | `run.wait({ timeoutMs })` | `run.Wait(ctx, WaitOptions{Timeout})` | `job_wait(run, timeout =)` |
+| read | `jobs.get(id)` · `jobs.list(job=, status=)` · `run.refresh()` | `get` · `list({ job, status })` · `refresh()` | `Get` · `List(ctx, ListOptions{})` · `Refresh` | `job_get` · `job_list` · `job_refresh` |
+| a person's own runs | `viewer(h).jobs.mine(job=)` | `viewer(h).jobs.mine({ job })` | `me.Jobs.Mine(ctx, ListOptions{})` | `job_mine(req, job =)` |
+| output, logs, stop | `output()` · `output_json()` · `logs()` · `tail()` · `cancel()` | `output()` · `outputJson()` · `logs()` · `tail()` · `cancel()` | `Output` · `OutputJSON` · `Logs` · `Tail` · `Cancel` | `job_output(run, json =)` · `job_logs` · `job_cancel` |
+
+A run carries `id`, `job`, `status` — `queued`, `running`, `succeeded`,
+`failed`, `timed_out`, `out_of_memory`, `cancelled` or `skipped` — `started_by`
+(`app`, `viewer`, `cli`, `schedule` or `ui`), `rerun_of`, `params`,
+`scheduled_for`, `deadline`, `progress` and `progress_message`,
+`queue_position` while queued, `exit_code`, `failure_reason` in words (`exit 3:
+connection refused`, `timed out after 45m`, `stopped at 1024 MB`),
+`peak_memory_mb`, `status_url` and `deduplicated` (camelCase in Node, Go field
+names in Go). `run.done` is any status but `queued` and `running`.
+
+**A repeated start is not a second run.** The platform derives a key from the
+person and the params, and a start matching a run in flight, or one that
+finished in the last minute, comes back as *that* run with `deduplicated` set.
+An explicit idempotency key holds for 24 hours. **A full queue is
+`queue_full`** (429, retryable, `retry_after`) — only when the app already has
+as many runs queued as the install allows.
+
+**A run is never retried.** A failed run stays failed, with `failure_reason`
+saying why; running it again is a person's decision — `toft job rerun <id>`, or
+rerunning it from the run in Toft — which starts a new run with the same params and records its
+`rerun_of`. **Params are the only input**: typed by `toft.toml`, recorded and
+shown on the run, so never secrets, and capped at 64 KB — anything bigger goes
+into the app's storage first, and a param names where.
 
 **Two objects, and which one you call is the decision.** `toft.jobs` is the app
 acting as itself. `toft.viewer(request.headers).jobs` is the app acting for the
-person looking at the page — attribution that would otherwise be lost by
-omission. `viewer(...)` raises when there is nobody to act for.
+person looking at the page (`started_by: viewer`, and the run is in their
+`mine()`) — attribution that would otherwise be lost by omission.
+`viewer(...)` raises `no_viewer` when there is nobody to act for. **The
+platform adds no role gate to a viewer's start**: declaring the job is what
+authorized the app to start it, and whether this person may press the button is
+the app's own rule — `who()` or the caller's role, below.
 
 ```python
 me = toft.who(request.headers)          # Identity, or None for an anonymous visitor
@@ -460,22 +565,38 @@ administrator has effective ownership of every app, so `role == "owner"` alone
 would grant a destructive action to every administrator on the install. `email`
 is `None` on a public app.
 
-### Inside a job, inside a task
+### Inside a job
 
 ```python
-toft.run                                # the job's view of itself; None elsewhere
-task = toft.task(request.headers)       # a firing; None on an ordinary visit
-if task:
-    task.log(f"read 1,204 rows for {task.name}")
+run = toft.run                          # the job's view of itself; None outside a job
+run.params["region"]                    # typed as toft.toml declares; defaults applied
+run.progress(40, "loading rows")        # the bar and the words on the status page
+run.log("read 1,204 rows")              # a line in the run's log; error=True for stderr
+run.write_output_json({"rows": 1204})   # what run.output_json() reads back
+run.started_by, run.rerun_of, run.scheduled_for, run.deadline
 ```
 
-**A run given no payload is given no input location.** The variable is absent
-rather than pointing at an object nothing wrote, so *"was I given one?"* is
-answerable by looking rather than by reading and interpreting the error. A run
-started with parameters alone has no input — read the parameters. Read a payload
-**at the start of the run**: the link is presigned and expires, and a job that
-reads its input an hour in gets a refusal about the link, which every SDK says
-in those words.
+Node `toft.run` (`progress(percent, message)`, `log(message, { error })`,
+`writeOutput`, `startedBy`, `rerunOf`, `scheduledFor`, `deadline`); Go
+`toft.CurrentRun()` (`Params(&v)`, `Progress(ctx, percent, message)`,
+`Log(message, isError)`, `WriteOutput`, `ScheduledFor()`, `Deadline()`); R
+`current_run()`, a list, with `run_progress()`, `run_log()` and
+`run_write_output()`. Each is `None` / `null` / `nil` / `NULL` outside a job, so
+code shared between the web entrypoint and the job can tell which it is in.
+
+`scheduled_for` is **the instant this run is for**: the schedule tick it fired
+for, in the schedule's zone, even when it started late — or the time somebody
+named with `toft job run --for`. It is `None` when nobody gave one, never *now*,
+so a rerun of Tuesday's work processes Tuesday. `deadline` is when the platform
+stops the run. `rerun_of` is set on a rerun, which carries the same params — a
+job that must not repeat a side effect checks it. The same facts are in the
+environment the runner sets: `TOFT_RUN_ID`, `TOFT_JOB_NAME`, `TOFT_TRIGGER`,
+`TOFT_PARAMS`, `TOFT_PARAM_<NAME>`, `TOFT_SCHEDULED_FOR`, `TOFT_RERUN_OF`,
+`TOFT_DEADLINE`.
+
+**`log` is a print** — the runner ships stdout and stderr into the run's log —
+and is there so the last lines of a run that is then killed are not lost in a
+buffer. `toft job logs <id>` reads them.
 
 **A job holds no app token, and is told why** in all four languages. A run acts
 as the run; the calls it may make are the run's own, and a job reaching for the
@@ -483,23 +604,6 @@ app's credential is a design question rather than a missing variable. The one
 exceptions are sending and storage: a job may notify through its app's
 integrations and reach the stores its app maps, and every other app call is
 refused with `job_send_only`.
-
-A task is an HTTP request the platform makes to a path you published — it owns
-no process, so `task.log(...)` is the only thing that makes that run's log
-exist. Worth adding to anything that might outlive the timeout: a run that never
-answers is recorded as a failure with nothing else in it.
-
-**A task's schedule is optional, and your handler cannot tell.** A task created
-with no cron expression is fired only when somebody asks — `toft task run`, the
-Run now button, or your own app — and it travels the same firing path a schedule
-does, so `X-Toft-Cron: 1` is set either way and `toft.task(headers)` answers
-identically. Reading it means *this was a firing*, never *a schedule came
-round*.
-
-**`task.name` is the task's name, not its cron expression** (`Task.Name` in Go,
-`task.name` in Node). The platform sends the name so that one endpoint serving
-several tasks can tell which fired; nothing gives an app its own cron
-expression.
 
 ## Once it is deployed
 

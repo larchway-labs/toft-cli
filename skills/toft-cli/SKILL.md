@@ -1,6 +1,6 @@
 ---
 name: toft-cli
-description: Deploy an app to a Toft install with `toft`, the command-line client — sign in without a browser, create an app, push the working directory, watch the build, read the logs, roll back, and run jobs and scheduled tasks. Load it whenever you are deploying to Toft, are asked to ship code to a Toft install, or hit an `toft` command that refused something. Nothing here needs Node, Python or a language toolchain on the machine you are working on — the install builds.
+description: Deploy an app to a Toft install with `toft`, the command-line client — sign in without a browser, create an app, push the working directory, watch the build, read the logs, roll back, and run, rerun and wait for jobs. Load it whenever you are deploying to Toft, are asked to ship code to a Toft install, or hit an `toft` command that refused something. Nothing here needs Node, Python or a language toolchain on the machine you are working on — the install builds.
 ---
 
 # Deploying to Toft with `toft`
@@ -51,7 +51,9 @@ cleared before it will run.
 `toft login <url>` on its own opens a device flow and waits for a human. That is
 the wrong door for an agent. Use a personal API key (`toftu_`, which a person
 creates under **Your account → Credentials**) or a deploy key (`toftd_`, which an
-administrator creates under **Admin → Deploy keys**):
+administrator creates under **Admin → Deploy keys**). A deploy-scoped deploy key
+may create apps — `toft whoami` says `create apps yes` — and each one it creates
+is owned by the group it names with `toft create --owner-group <name|id>`:
 
 ```bash
 printf '%s' "$TOFT_KEY" | toft login --token-stdin https://toft.corp
@@ -67,7 +69,7 @@ beside the key** — and run those calls with `--session`:
 ```bash
 printf '%s' "$TOFT_ADMIN_PASSWORD" | toft login --password-stdin https://toft.corp   # --user admin is the default
 toft api PUT admin/storage/<id>/grants --data '{"subject_type":"user","subject_id":"…","access":"overwrite"}' --session
-toft api POST apps/<id>/lock --data '{"reason":"…"}' --session
+toft api POST apps/<id>/lock --data '{"message":"…"}' --session   # the field is message; an unknown one is ignored
 toft fetch / --session        # the app sees a signed-in person: who() answers with a name
 ```
 
@@ -168,7 +170,12 @@ toft rollback --yes               # back to the deployment before the serving on
   answer the same shape). A
   repository that does not exist, is private with no credential, has no such
   branch, or has no such `--subdir` folder is refused before anything is created: exit 1, `code:
-  source_unavailable`.
+  source_unavailable`. **With a deploy key, name the owning group**:
+  `--owner-group <name|id>` (a deploy key belongs to nobody, so what it creates
+  is a group's; `toft api GET groups` lists them). Without it the create is
+  refused before the upload, exit 2, `code: owner_group_required`, and a name
+  that matches no group is exit 2 `not_found`. A personal key may name one too,
+  and the group owns the app instead of you.
 - **`toft deploy`** bundles the working directory as it is, uncommitted edits
   included. It needs no git remote, no commit, not even a repository. It never
   creates an app — a missing link is exit 2 naming `toft link <slug>`.
@@ -196,7 +203,9 @@ toft rollback --yes               # back to the deployment before the serving on
   will deploy". It costs an upload and saves a build. **It works before
   `toft create`**: with no app linked, or a slug nobody has claimed, it checks
   the directory as a new app, behind the same doors a create has, and so does
-  `toft deploy --dry-run`. Its `--json` `warnings` are sentences, the same a
+  `toft deploy --dry-run`. With a deploy key that includes the owner: a check
+  of a new app needs `--owner-group <name|id>` as `toft create` does, and
+  without it is the same exit 2 `owner_group_required`, before the upload. Its `--json` `warnings` are sentences, the same a
   deploy's result carries; `warning_details` gives each a `code`
   (`manifest_unread`) and, for a `toft.toml` key, its `table`. With no
   `[runtime] python`, a `requires-python` that excludes the install's default
@@ -204,7 +213,12 @@ toft rollback --yes               # back to the deployment before the serving on
   one nothing satisfies is refused as `runtime_version`. It names
   the secret-looking files the bundle carries (`including .env`) as a deploy
   does, and warns when `toft.toml` declares jobs and `toft whoami` says this
-  install runs none.
+  install runs none. **It prints each job's effective limits with their
+  source** — `nightly  timeout 45m (declared) · memory 512 MB (install
+  default)` — and a job whose declared limit an administrator's ceiling has
+  since lowered as a `limit_clamped` warning. A declaration above the ceiling,
+  or a removed key, is a problem with its `code` (`limit_exceeds_ceiling`,
+  `removed_key`) and a `hint` naming the line to write.
 - **`--verify <path>`** on `toft deploy`, `redeploy`, `rollback` and `create`
   requests that path as you once the platform says the deploy succeeded, and
   exits 1 unless it answers 2xx or 3xx. The platform's own readiness probe only
@@ -383,8 +397,7 @@ toft delete my-app --yes               # the slug typed out; no undo
 
 Under `--json`: `env list` rows carry `value` whenever it was shown — `""`
 for an empty one — and `"sensitive": true` with no value for a write-only one.
-`task list` gives `schedule` as the bare cron expression and `timezone` beside
-it (`UTC` when none). `deployments list` is the install's answer, except that
+`deployments list` is the install's answer, except that
 `step_timings` is an object rather than a string holding one.
 
 - **A deployment id can be shortened to a unique prefix of six or more
@@ -424,17 +437,25 @@ A contract, and the reason a failed run can be triaged without reading the log:
 |---|---|
 | 0 | it worked |
 | 1 | the platform did the thing and it failed — a failed build, a refused scan, a failed job run — and a wait that ran out (`--timeout`, `--wait-timeout`): the work is still going on the platform, and the message names the command that follows it |
-| 2 | usage or configuration — no app linked, a bad flag, an argument nothing reads, jobs not available on this install, a confirmation nothing could answer, **an app that is locked**, **a name that does not resolve** (an unknown deployment id — `deploy --watch` and `deployments delete` too — task run, store, job or task), or **a name already taken** (`name_taken`, e.g. `toft task create` of an existing task) |
-| 3 | not authenticated, or refused — no credential, a revoked or expired key, uploads switched off, a license limit, or **the app's state refusing**: a disabled task (`schedule_disabled`), the serving deployment (`deployment_protected`) |
+| 2 | usage or configuration — no app linked, a bad flag, an argument nothing reads, jobs not available on this install, a confirmation nothing could answer, **an app that is locked**, **a name that does not resolve** (an unknown deployment id — `deploy --watch` and `deployments delete` too — store, job or run), a param a job refuses, or a command that was removed (`removed_command`, `toft task`) |
+| 3 | not authenticated, or refused — no credential, a revoked or expired key, uploads switched off, a license limit, or **the app's state refusing**: a rerun of a run still going (`run_still_open`), the serving deployment (`deployment_protected`) |
 | 4 | the install did not answer |
 
 Under `--json` an exit-2 refusal carries a `code` wherever one names the
 mistake: the install's own (`not_found` for an id or store that resolves to
 nothing, its validation code for a cron expression or time zone it refused), or
 this client's — `manifest_invalid` for a `toft.toml` that does not parse,
-`no_such_directory` for a directory argument that is not one, `invalid_method`
-and `invalid_overlap` for `toft task create|edit`. An exit-3 refusal from a 409
-is `"kind": "refused"` with the install's code. One mapping decides all of this
+`no_such_directory` for a directory argument that is not one, `env_not_set` for `toft env
+unset` of a variable the app lacks, `owner_group_required` for a deploy key's
+`toft create` without `--owner-group`, and for a credential the environment
+misdescribes: `missing_install` (`TOFT_TOKEN` and no install named anywhere —
+set `TOFT_URL`), `ambiguous_credential` (a token whose install the environment
+does not name, or two tokens), `token_file_unreadable`, `ambiguous_alias`.
+An exit-3 refusal of state is `"kind": "refused"` with a code: the install's,
+from a 409, or this client's — `already_exists` for a store write onto an
+existing name at `write` (each such item of a `store cp --json` list carries
+it too) and `insufficient_access` for `toft store mv` from a store held below
+`full`, refused before anything is copied. One mapping decides all of this
 for every verb, so no verb answers 1 for something that never ran.
 
 ## Running unattended
@@ -442,7 +463,7 @@ for every verb, so no verb answers 1 for something that never ran.
 Confirmations are detected, not remembered: `toft` treats the run as unattended
 when `--yes` is passed, `CI` is set, or stdin is not a terminal — and then it
 **refuses rather than hanging** on a question nobody can answer. Pass `--yes` to
-anything that would ask (`toft create`, `toft rollback`, `toft task delete`).
+anything that would ask (`toft create`, `toft rollback`, `toft deployments prune`).
 
 `-q` drops the narration and keeps the answer on stdout — and never the reason one item of a `store cp`/`mv`/`rm` batch failed, or the sentence saying why a deploy failed. Under `--json` stdout is JSON only: `create` prints its URL to stderr there (it is in the result object). Table timestamps are local time with the zone named; every JSON field is UTC. `--json` is on every
 command. `--no-color` (or `NO_COLOR`) for a clean log.
@@ -459,7 +480,7 @@ English off stderr:
 `kind` is the client's classification — `usage`, `auth`, `refused`, `unreachable`,
 `locked`, `failed` — and `code` is the install's own, present only when it sent one.
 **`retryable` is always there and is the field to branch on**: the install's own
-answer when the refusal was the install's (a full job queue is `true` at 409; a
+answer when the refusal was the install's (a full job queue, `queue_full`, is `true` at 429; a
 503 that means "this install is configured without it" is `false`), and for a
 refusal `toft` made itself, `true` only when the install could not be reached —
 and not then when the host name does not resolve, which a retry cannot fix. A
@@ -500,62 +521,71 @@ against your distribution rather than the install's.
 A bundled `.env`, `*.pem`, `id_rsa*` or `*.key` gets one dimmed warning and is
 not refused — do not put secrets in the tree.
 
-## Jobs and scheduled tasks
+## Jobs
 
-Two different things, and the CLI keeps them apart because the boundary is real:
+A job is a command your app declares in `toft.toml` — `[jobs.<name>]` with a
+`command`, and optionally a `timeout`, `memory`, `schedule`, `params` — run as a
+process of its own from the same release, with its own timeout and memory limit:
+a container of its own where the install has a cluster, a process on the
+install's own machine where it does not. **`toft.toml` is the only place a job
+is made**; there is no verb that creates, edits or deletes one, and a deploy key
+ships them with the code. Jobs are on by default.
 
-- **`toft job list|run|runs|logs|cancel`** — a job runs apart from the web
-  process, with its own memory limit and deadline, from the same release — in a
-  container of its own on a cluster, on the install's own machine otherwise. Declare one in
-  `toft.toml`. `toft job run <name>` waits by default and the run's outcome
-  is the exit code — **`--json` included**, where a failed run prints the run
-  document *and then* the refusal, two lines, exit 1; `--param k=v` repeats and
-  is never parsed into a command. `--for 2026-10-06T03:00:00+01:00` names the
-  instant the run is for (a date or date-time with no offset is UTC); the run
-  reads it as `TOFT_SCHEDULED_FOR`. A job runs in a container where the
-  install has a cluster and on the install's own machine where it does not;
-  `toft job runs [name]` says which, and the instant a run was for; a name narrows
-  it to one job. `toft job cancel <runID>` on a run that already finished says
-  `already finished (<status>)`, exit 0, `"changed":false`. `toft job list` prints
-  each job's schedule with its zone and any `expect_within` alert window.
-  Where the install cannot run jobs for an app, `toft` says why as exit 2.
-- **`toft task list|create|edit|delete|run|runs|logs`** — a scheduled task is an
-  HTTP request to a path your app published, in the app's own process.
-  `toft task run <name>` fires one now and waits as the job verb does, and a
-  `skipped` firing is exit 1 — a firing that did not happen is not a success,
-  under `--json` as well. It takes no parameters *here*: a task's parameters belong to
-  its schedule, because a request to a published path has nowhere else to put
-  them.
+- **`toft job list`** prints each job with its schedule and zone, its
+  `expect_within` window, its params (`--param region=<emea|amer|apac>`), its
+  effective limits with their source — `timeout 45m (declared)`, `memory 512 MB
+  (install default)`, `timeout 15m (clamped by admin, declared 45m)` — and
+  where runs go. `toft job run` with no name lists the same jobs with how to
+  run each.
+- **`toft job run <name>`** starts a run and waits for it; the run's outcome is
+  the exit code — **`--json` included**, where a run that did not succeed prints
+  the run document *and then* the refusal, two lines, exit 1. While it waits it
+  says where the run stands (`queued · 2nd`, `running · 4m · 40% loading
+  rows`); `--follow` streams the run's log as well. `--param k=v` repeats, is
+  never parsed into a command, and is held to the job's declared type and
+  choices; **a required param left out is asked for** when a terminal is
+  attached, offering its help and choices, and refused `param_required` (exit 2)
+  when none is. `--for 2026-10-06T03:00:00+01:00` names the instant the run is
+  for (a date or date-time with no offset is UTC); the run reads it as
+  `TOFT_SCHEDULED_FOR`. `--idempotency-key K` makes starts carrying the same key
+  within 24 hours one run (the answer says `deduplicated`). `--no-wait` returns
+  the run id; `--timeout <d>` bounds the wait, and a wait that runs out is exit 1
+  naming `toft job wait <id>` — the run carries on.
+- **`toft job rerun <runID>`** starts a new run of the same job with the same
+  params and `--for` instant, recorded as a rerun of the one named (`rerun_of`),
+  and waits as `run` does. **Nothing reruns automatically** — there are no
+  retries; a failed run stays failed and this is how it runs again. A run that
+  has not finished is refused `run_still_open` (exit 3, hint `toft job wait`).
+- **`toft job wait <runID>`** waits for a run something else started — a
+  schedule, the app, a person in the browser, an earlier `--no-wait` — with the
+  same output, `--follow`, `--timeout` and exit code as `run`.
+- **`toft job runs [name]`** lists recent runs, of one job when named, with who
+  started each (`app`, `viewer`, `cli`, `schedule`, `ui`) and the instant it was
+  for; **`toft job runs <runID>`** is one run in full — status, reason, limits,
+  peak memory, `rerun_of` — and the one command worth typing next. **`toft job
+  logs <runID>`** is what the run printed; `--follow` keeps reading until it
+  ends. **`toft job cancel <runID>`** stops one; on a run that already finished
+  it says `already finished (<status>)`, exit 0, `"changed":false`. A run id may
+  be the eight characters `toft job runs` prints.
 
-  `toft task create <name> --schedule "0 9 * * *" --path /digest` is the whole of
-  it; add `--timezone Europe/London` to read the schedule in a zone rather than
-  UTC (it then fires once per wall-clock time through daylight saving changes); `--schedule`, `--method`, `--overlap` and `--enabled=false` are optional.
-  `toft task edit <name> --timezone <zone>` alone re-zones the schedule the task
-  already has, and every edit prints the task's state (`enabled`/`disabled`).
-  **Without a schedule the task is on demand** — nothing fires it until
-  `toft task run`, the Run button or the app asks for it — and `--schedule ""` on
-  an edit takes a schedule away without touching the task or its history. **`toft task edit`
-  sends only the fields you name**, so naming one leaves the rest alone.
-  `toft task delete` asks first, because a task takes its run history with it —
-  pass `--yes` where nothing can answer. `toft task list` has a column saying
-  `enabled` or `disabled`, and `toft task runs` prints local times with the zone.
-  `toft task logs <runID> --task <name>` reads one run's log; the task name is
-  required because a run id alone does not say which task it belongs to. **A
-  task's log holds only what the app sent with the SDK's `task.log()`** — an
-  empty one says so, and what the app printed is in `toft logs`.
+**A run ends in one of six words, and the word is on the last line**:
+`succeeded` is exit 0; `failed`, `timed_out`, `out_of_memory`, `cancelled` and
+`skipped` are exit 1, with the reason beside it in words (`exit 3: connection
+refused`, `timed out after 45m`, `stopped at 1024 MB`) and the tail of the log
+printed unasked. `skipped` is a scheduled run that `overlap = "skip"` stood down
+because the previous one was still going — it did no work, so it is not a
+success. A full queue (`queue_full`) is exit 1 and retryable; a job the app does
+not declare (`no_such_job`) or a param it refuses (`param_type`,
+`param_choice`) is exit 2. Where the install cannot run jobs for this app,
+`toft` says why as exit 2 (`jobs_unavailable`).
 
-**The two are created in different places, and only one of them here.** A job is
-declared in `toft.toml` and exists once the release is built — and a
-`schedule` on a job there makes it a *scheduled job*, still a container of its
-own, not a task. A task is a row on the app, and `toft task create` is the way to
-make one. A full personal key reaches these, a **deploy key does not** — shaping
-a task is configuration rather than shipping.
-
-**A `[tasks]` table in `toft.toml` does nothing.** Only `[jobs]` is read
-there. An unrecognized table is ignored rather than refused, because the file is
-shared with `[app]` and `[static]` — but the deploy says so: a plain `toft deploy`
-prints it, and `--json` carries a `warnings` array on the result object. You no
-longer have to read the build log to find out that something was ignored.
+**`toft task` is gone.** Scheduled tasks were replaced by jobs: it refuses with
+`removed_command` (exit 2) and names the replacement — a `[jobs.<name>]` with a
+`command` and a `schedule`. **A `[tasks]` table, and `retries`,
+`viewer_runnable` or `enabled` in a job, are refused** by `toft check` and the
+deploy with `removed_key` and the replacement in the hint. Pausing a job's
+schedule until the next deploy is done in Toft (or `PATCH
+/api/v1/apps/{id}/jobs/{name}` with `{"enabled": false}`), not in `toft.toml`.
 
 ## Files: `toft store`
 
@@ -720,8 +750,7 @@ rewrite an argument that starts with a slash into a Windows path *before* `toft`
 is started, so `toft api GET /api/v1/apps` arrives as `C:/Program
 Files/Git/api/v1/apps` and reaches no route. `toft` recognises the shape and says
 so, but the shell is what did it: use `toft api GET apps`, which is never
-rewritten, or set `MSYS_NO_PATHCONV=1`. The same applies to `--path` on `toft task
-create`.
+rewritten, or set `MSYS_NO_PATHCONV=1`.
 
 **Prefer a verb where one exists.** `toft api` validates nothing but your JSON: a
 real verb checks the arguments, names the one you left out, reports failures in
@@ -736,8 +765,8 @@ with `toft api`, which is the point of the column on the right:
 | | |
 |---|---|
 | An app's name, slug, branch, embedding origins or listing | Not in the CLI. `PATCH /api/v1/apps/{id}` with the field, or the Settings page. Environment variables and visibility have verbs: `toft env`, `toft visibility` |
-| Creating, editing or deleting a scheduled task | `toft task create\|edit\|delete`, with a full personal key |
-| A notebook's re-render schedule | Not in the CLI, and not a scheduled task — it produces a new rendered release rather than calling a path (a task on a rendered document is refused, `rendered_document`). The Automation tab, or `PUT`/`DELETE /api/v1/apps/{id}/render-schedule` |
+| Creating, editing or deleting a job | Not a call at all: a `[jobs.<name>]` table in `toft.toml`, shipped with `toft deploy`. Pausing a schedule until the next deploy is the app's Automation tab, or `PATCH /api/v1/apps/{id}/jobs/{name}` with `{"enabled": false}` |
+| A notebook's re-render schedule | Not in the CLI, and not a job — it produces a new rendered release rather than running a command. The Automation tab, or `PUT`/`DELETE /api/v1/apps/{id}/render-schedule` |
 | An app's tags | Not in the CLI. `PUT /api/v1/apps/{id}/tags` with the ids of tags that already exist; creating the tags themselves is an administrator's |
 | Grants, storage mappings, integrations | Administrator surfaces, in the UI or the API |
 | Publishing from RStudio | Not `toft`'s: RStudio's *Add account* takes the install's address as a Posit Connect server, signs in through the same approval page as `toft login`, and publishes with rsconnect. Its routes are under `/__api__`; an agent deploys with `toft` |
@@ -753,7 +782,9 @@ with `toft api`, which is the point of the column on the right:
 | a license limit (exit 3) | a limit on the install, not a permission problem, and nothing already deployed has stopped |
 | the deploy failed during `scan` | the dependency gate, or the archive's caps. `reason` says which, and `toft deps` has the packages |
 | an app that is locked (exit 2) | an administrator, or the install's own dependency policy, has locked it. **Nothing was built**, and retrying will refuse identically until the lock is lifted |
-| a task or job name that does not resolve (exit 2) | a name, not a run — the platform attempted nothing. `toft task list` and `toft job list` name what exists. This is exit **2**, never 1: exit 1 would mean the work ran and failed |
+| a job name that does not resolve (exit 2, `no_such_job`) | a name, not a run — the platform attempted nothing. `toft job list` names what exists; a job not yet in a deployed `toft.toml` does not exist. This is exit **2**, never 1: exit 1 would mean the work ran and failed |
+| `run_still_open` (exit 3) on `toft job rerun` | the run has not finished; `toft job wait <id>` first, or `toft job cancel <id>` |
+| `removed_key` / `limit_exceeds_ceiling` at `toft check` or deploy | a key Toft no longer reads (`retries`, `viewer_runnable`, `enabled`, `[tasks]`), or a `timeout`/`memory` above the install's ceiling. The hint is the line to write instead |
 | `background jobs are not available` (exit 2, `code: jobs_unavailable`) | this install cannot run jobs for this app, and the message and the install's hint say why. Configuration, not a bug in the job |
 | `authentication required` from the app's URL | the app is private and the request carried no credential — send your key, per Looking at the app |
 

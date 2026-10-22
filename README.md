@@ -43,14 +43,14 @@ plain folder deploys.
 | `toft login [url]` | Sign in to an install. `--status` says who and where, `--forget` drops a stored credential (`--forget-all` every one), `--token-stdin` for CI, `--password-stdin` to store the built-in administrator's session beside the key — used by any command run with `--session` |
 | `toft link <app>` | Record which app this directory deploys to. `--local` keeps it out of git |
 | `toft deploy [dir]` | Bundle and upload. `--logs` interleaves the build log, `--json` for scripts, `--verify <path>` checks the app answers once it is live, `--dry-run` is `toft check` |
-| `toft check [dir]` | What a deploy of this directory would decide — what the app is, which language version it gets, what in `toft.toml` is ignored — without deploying anything |
+| `toft check [dir]` | What a deploy of this directory would decide — what the app is, which language version it gets, each job's timeout and memory and where they came from, what in `toft.toml` is ignored or no longer allowed — without deploying anything |
 | `toft status` | What is serving, since when, and from what |
 | `toft fetch [path]` | Request a page of your deployed app as you, even when it is private. Prints the status and the start of the body; `--anonymous` shows what a stranger sees. A stopped app says so and names `toft start`. It takes a path, not a URL |
 | `toft whoami` | Who you are signed in as, what your key can do, and what this install allows — uploads, public apps, jobs, language versions |
 | `toft deps` | What the dependency policy says about the app. If a deploy was refused, this is the packages, the advisories and the versions that fix it |
 | `toft logs` | The app's log. `--follow`, or `--deploy <id>` for one build's output |
 | `toft rollback [id]` | Back to the previous deployment. Names it before it acts, and the release now serving once it is done |
-| `toft create [dir]` | Make a new app and deploy this directory into it. Tells you the name it will take and asks first. `--repo <url>` to build from a repository instead, and `--subdir <folder>` with it to build one folder of a repository that holds several apps. A slug you named that is taken is refused rather than renamed |
+| `toft create [dir]` | Make a new app and deploy this directory into it. Tells you the name it will take and asks first. `--repo <url>` to build from a repository instead, and `--subdir <folder>` with it to build one folder of a repository that holds several apps. A slug you named that is taken is refused rather than renamed. `--owner-group <name\|id>` gives the app to a group — required with a deploy key, which belongs to nobody |
 | `toft redeploy` | Build again from the app's own repository. Sends nothing from your disk |
 | `toft restart` / `toft start` | Restart the app, starting it if it is stopped. `--wait` waits until it is up and fails if it never comes up |
 | `toft stop` | Stop the app |
@@ -59,8 +59,8 @@ plain folder deploys.
 | `toft deployments list\|prune\|delete` | The app's deployment history. `prune` deletes all but the one serving. An id can be a unique prefix of six or more characters, here and in `toft logs --deploy` |
 | `toft delete <app>` | Delete an app and everything it has. The name has to be typed out |
 | `toft events` | What has gone wrong with this app. `--since 2h`, `--severity`, `--kind` |
-| `toft job list\|run\|runs\|logs\|cancel` | Jobs, which run in a container where the install has a cluster and on the install's own machine where it does not, each with its own memory limit. `toft job run` waits for the job and fails if it fails. `--param k=v` to pass values, `--for <time>` to name the instant the run is for |
-| `toft task list\|create\|edit\|delete\|run\|runs\|logs` | Scheduled tasks, which are HTTP requests to a path your app publishes. `create` needs `--path`, and `--schedule` (with `--timezone` for a zone other than UTC) only if you want the platform to call it on a timetable; `edit` changes only the fields you name, and a switch is written `--enabled=false` |
+| `toft job list\|run\|rerun\|wait\|runs\|logs\|cancel` | Jobs — commands your app declares in `toft.toml`, with or without a schedule — which run in a container where the install has a cluster and on the install's own machine where it does not, each with its own timeout and memory limit. `toft job run` waits for the run and fails if it fails; `--follow` shows its log as it goes. `--param k=v` to pass values (a required one you leave out is asked for), `--for <time>` to name the instant the run is for. Nothing is retried automatically: `toft job rerun <id>` runs one again with the same values, and `toft job wait <id>` waits for a run something else started |
+| `toft task` | Removed: scheduled tasks are now jobs with a `schedule` in `toft.toml`. It says so and exits 2 |
 | `toft apps` | The apps you can see. `--mine` |
 | `toft store ls\|cp\|mv\|mkdir\|rm\|put\|get` | Files in an app's durable store. `cp -r` copies whole folders up and down (`toft://<store>/<path>` is the store side), `mv` renames, `mkdir` makes an empty folder, `rm -r` deletes one. Every path prints as `toft://<store>/<path>`, which every subcommand takes back. `get … -o -` writes to stdout |
 | `toft sdk vendor` | The app SDK this install carries, written into your working directory so your editor, `go build` and your CI can see it |
@@ -135,6 +135,10 @@ export TOFT_TOKEN=toftd_...
 toft deploy --no-watch
 ```
 
+A deploy key creates an app only into a group that will own it:
+`toft create --yes --owner-group <name|id>`. Without the flag it is refused,
+exit 2, before anything is uploaded.
+
 **Give that key full access, not read-only.** A key's scope is chosen when it is
 minted and cannot be widened afterwards — a read-only one is replaced, not
 changed. It will fetch status and logs quite happily and then fail every deploy
@@ -171,7 +175,7 @@ If a step fails, `toft events` says what the platform noticed.
 | `0` | It worked |
 | `1` | The platform did the thing and it failed — a failed build, a refused bundle |
 | `2` | Usage or configuration: no app linked, a bad flag, a name that does not exist or is already taken, a path no route on the install matches, a prompt that could not be asked, or an app an administrator has locked |
-| `3` | Not authenticated, or refused — including a refusal by the app's state, such as running a disabled task or deleting the serving deployment. If it says your account is a viewer, creating and deploying apps needs the publisher role — ask an administrator for it |
+| `3` | Not authenticated, or refused — including a refusal by the app's state, such as rerunning a run that has not finished or deleting the serving deployment. If it says your account is a viewer, creating and deploying apps needs the publisher role — ask an administrator for it |
 | `4` | Could not reach the install |
 
 ## For coding agents
