@@ -163,8 +163,10 @@ toft rollback --yes               # back to the deployment before the serving on
   printed, and names `--app my-app` — the spelling that sets the slug.
   **A slug you name** with `--app` or in `toft.toml` that is already taken is
   refused, exit 2, `code: name_taken`; if the app is yours, `toft link <slug>`
-  and `toft deploy`. A slug taken from a folder or directory name is still
-  renamed (`-2`) and says so. `toft create --json` waits for the first build and
+  and `toft deploy`. A slug is at most 54 characters: a longer one you name is
+  refused, exit 2, `code: slug_too_long`, before anything is created. A slug
+  taken from a folder or directory name is still renamed (`-2`) and says so,
+  and cut to 54 when it is longer. `toft create --json` waits for the first build and
   answers like `deploy --json`; add `--no-watch` for the app document alone
   (`{app, url, deployment_id}` — `deploy` and `redeploy --no-watch --json`
   answer the same shape). A
