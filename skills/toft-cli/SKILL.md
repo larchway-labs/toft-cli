@@ -94,6 +94,12 @@ full — there is no `--scope` — so a read key can only reach you through
 Every GET works, and the first write comes back exit 3 with
 `code: "key_read_scope"`. Ask for a full key; there is nothing to retry.
 
+**A person holds at most ten keys, and an expired one still holds its slot.**
+`toft login` does not revoke the key it replaces, so an account that signs in
+often fills up: the eleventh mint — the device flow's approval or
+`POST me/api-keys` — is a 409 `code: "key_limit_reached"`. Revoke a key under
+*Your account → Credentials* (expired ones first); retrying will not help.
+
 There is no `--token` flag: a credential passed that way lands in shell history
 and in every `ps` on the machine. The two other doors are environment variables:
 
@@ -133,7 +139,8 @@ toft create --yes --link          # claim a slug, deploy this tree into it
 # …edit files…
 toft deploy --verify /            # push what is on disk now, then request /
 toft fetch /api/health            # one request to the app, as you
-toft status                       # what is serving, since when, from what
+toft status                       # what is serving, since when, from what — and a lock, if
+                                  # an administrator placed one (--json: "lock", null when none)
 toft logs --follow                # what the app said
 toft events                       # what the platform noticed
 toft deps                         # what the dependency policy says about it
@@ -155,8 +162,8 @@ toft rollback --yes               # back to the deployment before the serving on
   and `toft deploy`. A slug taken from a folder or directory name is still
   renamed (`-2`) and says so. `toft create --json` waits for the first build and
   answers like `deploy --json`; add `--no-watch` for the app document alone. A
-  repository that does not exist, is private with no credential, or has no such
-  branch is refused before anything is created: exit 1, `code:
+  repository that does not exist, is private with no credential, has no such
+  branch, or has no such `--subdir` folder is refused before anything is created: exit 1, `code:
   source_unavailable`.
 - **`toft deploy`** bundles the working directory as it is, uncommitted edits
   included. It needs no git remote, no commit, not even a repository. It never
@@ -428,7 +435,7 @@ when `--yes` is passed, `CI` is set, or stdin is not a terminal — and then it
 **refuses rather than hanging** on a question nobody can answer. Pass `--yes` to
 anything that would ask (`toft create`, `toft rollback`, `toft task delete`).
 
-`-q` drops the narration and keeps the answer on stdout. `--json` is on every
+`-q` drops the narration and keeps the answer on stdout — and never the reason one item of a `store cp`/`mv`/`rm` batch failed. Under `--json` stdout is JSON only: `create` prints its URL to stderr there (it is in the result object). Table timestamps are local time with the zone named; every JSON field is UTC. `--json` is on every
 command. `--no-color` (or `NO_COLOR`) for a clean log.
 
 **A refusal is JSON too.** Under `--json` anything that exits non-zero without

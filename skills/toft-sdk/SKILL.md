@@ -422,8 +422,11 @@ if me and "finance" in me.group_names:
 ```
 
 `who` returns `None` for a visitor who signed in nowhere, because that is an
-answer. It raises for one thing only: an app an administrator has not switched
-viewer identity on for.
+answer. It raises for one thing only: a request **carrying a signed-in viewer**
+to an app an administrator has not switched viewer identity on for. A request
+with nobody on it — an anonymous visitor, or an API key — answers `None`
+whatever the setting, because there is no one to look up; read
+`toft.app.can("viewer.identity")` when you need the setting itself.
 
 `role` is `owner`/`editor`/`viewer` and answers *what may this person do to this
 deployment in Toft* — not what they may do in your domain. A rule about
