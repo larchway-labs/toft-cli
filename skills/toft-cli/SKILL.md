@@ -161,13 +161,20 @@ toft rollback --yes               # back to the deployment before the serving on
   refused, exit 2, `code: name_taken`; if the app is yours, `toft link <slug>`
   and `toft deploy`. A slug taken from a folder or directory name is still
   renamed (`-2`) and says so. `toft create --json` waits for the first build and
-  answers like `deploy --json`; add `--no-watch` for the app document alone. A
+  answers like `deploy --json`; add `--no-watch` for the app document alone
+  (`{app, url, deployment_id}` — `deploy` and `redeploy --no-watch --json`
+  answer the same shape). A
   repository that does not exist, is private with no credential, has no such
   branch, or has no such `--subdir` folder is refused before anything is created: exit 1, `code:
   source_unavailable`.
 - **`toft deploy`** bundles the working directory as it is, uncommitted edits
   included. It needs no git remote, no commit, not even a repository. It never
   creates an app — a missing link is exit 2 naming `toft link <slug>`.
+  `toft link` into a `toft.toml` whose `[app]` table has no `slug` adds that
+  one line under the header; a table that already names a slug is refused,
+  exit 2 — edit it, or add a per-install entry with `--install`. A slug that
+  does not resolve says where it was read (`.toft.toml [app]`), unless you
+  typed it.
 - **`toft redeploy`** rebuilds from the repository the app names and uploads
   nothing. On an uploaded app it is refused, naming `toft deploy`.
 - **`toft restart --wait`** starts a stopped app and fails if it does not come up.
@@ -743,7 +750,7 @@ with `toft api`, which is the point of the column on the right:
 | the deploy failed during `scan` | the dependency gate, or the archive's caps. `reason` says which, and `toft deps` has the packages |
 | an app that is locked (exit 2) | an administrator, or the install's own dependency policy, has locked it. **Nothing was built**, and retrying will refuse identically until the lock is lifted |
 | a task or job name that does not resolve (exit 2) | a name, not a run — the platform attempted nothing. `toft task list` and `toft job list` name what exists. This is exit **2**, never 1: exit 1 would mean the work ran and failed |
-| `background jobs are not available` (exit 2) | this install cannot run jobs for this app, and the message says why. Configuration, not a bug in the job |
+| `background jobs are not available` (exit 2, `code: jobs_unavailable`) | this install cannot run jobs for this app, and the message and the install's hint say why. Configuration, not a bug in the job |
 | `authentication required` from the app's URL | the app is private and the request carried no credential — send your key, per Looking at the app |
 
 Everything takes `--help`.
