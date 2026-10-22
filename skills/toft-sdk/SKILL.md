@@ -18,10 +18,11 @@ can do.
 | `HOST` | bind it. `app.listen(port)` alone binds `0.0.0.0`, which is reachable without going through the platform |
 | `BASE_PATH` | where you are mounted, e.g. `/apps/reports`. Always set, on every install and both origin shapes |
 
-**Links and form actions carry `BASE_PATH`; redirects must not.** The proxy
-strips the prefix before your handler sees the request and re-adds it on the way
-out, so a `Location: /done` is right and `Location: /apps/reports/done` is
-doubled. Root-absolute asset URLs (`/styles.css`) ask the *platform*, not you,
+**Links and form actions carry `BASE_PATH`; redirects need not.** The proxy
+gives a root-relative `Location` the prefix on the way out, on every framework
+Next.js included, so a `Location: /done` is right — and one that already
+carries it (`/apps/reports/done`, from `url_for` or Next's own helpers) is left
+as it is. Root-absolute asset URLs (`/styles.css`) ask the *platform*, not you,
 and 404.
 
 Anything else you need — a database URL, an API key — is an environment variable
@@ -253,7 +254,10 @@ false` — call it on `viewer(headers).jobs`. `viewer(headers)` with nobody
 signed in is `no_viewer`; an argument the SDK rejects locally (an email with no
 recipient, blank text, an empty send or session id, app data that is not an
 object) is `bad_request`; a run's input is `input_not_given` or `input_expired`,
-and `write_output` with no location `no_output` — all `retryable: false`. So do the storage refusals, in all four
+and `write_output` with no location `no_output` — all `retryable: false`. A
+run's `wait()` that runs out is `wait_timeout`, `retryable: true` — the run is
+still going (Python raises the built-in `TimeoutError`; a cancelled Go context
+is `wait_cancelled`). So do the storage refusals, in all four
 languages: `not_mapped` (no resource by that name), `ambiguous_mount` (one name
 mounted twice and no folder named), `not_mounted` (`.path`/`put` on a store
 reached over signed URLs), `insufficient_access`, `already_exists` (an existing
@@ -300,10 +304,14 @@ await toft.app.slug();  await toft.app.basePath();  await toft.app.can("slack");
 ```
 
 **R has a smaller surface**: `app_info()` and `app_base_path()` for the app's own
-facts, no `can`; `scratch_dir()` takes no argument and there is no session
-scratch; `notify(kind, …)` names the kind first; `caller_role(headers)` and
-`caller_can(headers, at_least)` answer the viewer's role; `mounts()`, `storage()`
-and `store()`/`store_put()` match the other languages.
+facts, no `can`; `app_info()` is cached for the process like the other SDKs'
+view, and `app_info(refresh = TRUE)` reads it again; `scratch_dir()` takes no
+argument and there is no session scratch; `notify(kind, …)` names the kind
+first; `caller_role(headers)` and `caller_can(headers, at_least)` answer the
+viewer's role; `mounts()`, `storage()` and `store()`/`store_put()` match the
+other languages. **Headers come as the framework hands them**: a plumber route's
+`req$HEADERS` and a Shiny app's `session$request` (CGI-named,
+`HTTP_X_TOFT_ACT_FOR`) both work for `viewer()` and `caller_role()`.
 
 **In Node these are async methods, and forgetting that does not fail.**
 `toft.app.id` without the call and the `await` is a Promise, and a template that
@@ -331,7 +339,7 @@ for this app" on a screen instead of leaving it to be found at 2am in a log.
 | `toft.session_scratch_dir(id)` / `toft.sessionScratchDir` / `toft.SessionScratchDir` | one browser session's corner of it. The id is hashed, so a traversing value cannot escape; an empty one is refused |
 | `toft.storage("reports").path` / `toft.Storage(…).Path` | a durable volume an administrator mapped to this app, resolved by name |
 | `toft.store("reports").put(path)` / `toft.Store(…).Put(path, name)` | a file into an object store **that is mounted here** |
-| `toft.store("reports").upload(path)` · `download(name)` · `url(name)` · `remove(name)` · `list(path)` | the same store over the platform's signed URLs — in both modes, mounted or not |
+| `toft.store("reports").upload(path)` · `download(name)` · `url(name)` · `remove(name)` · `list(path)` | the same store over the platform's signed URLs — in both modes, mounted or not, **where the install has a store signer**: without one every call is `store_uploads_off` (404), and a mounted store is still readable at its path |
 | `toft.mounts()` / `toft.Mounts()` | everything mapped, with `read_only` / `readOnly` / `ReadOnly()` |
 
 **A store is reached over signed URLs as well as at its path, and on an install
@@ -385,6 +393,9 @@ toft.data.update(lambda s: s.update(runs=s.get("runs", 0) + 1))   # against a se
 
 Both writes hand back the document they wrote — `doc.data` is what you saved,
 not `None` — so a caller does not need a second read to see its own change.
+`update` re-reads under a version conflict and waits out the app's rate limit
+(60 calls a minute, burst 10) within its attempts; in R, which has no
+`update`, a get-then-set under several writers can lose one.
 
 One JSON document per app, 256 KiB, no keys and no queries — it survives
 restart, redeploy and rollback. Never-written, cleared and `{}` stay tellable

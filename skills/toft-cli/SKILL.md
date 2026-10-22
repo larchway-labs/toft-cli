@@ -119,8 +119,10 @@ stored credential (`--forget-all` drops every one); it does **not** revoke the k
 **Ask before you try: `toft whoami`.** It names the account and its role, the
 credential (`api_key`, `deploy_key` or `session`, its scope and when it
 expires), whether you can create apps, and what the install allows — uploaded
-bundles, public apps, background jobs, and the interpreter versions a new app
-is judged against. Every one of those is otherwise learned from a refusal, so
+bundles, public apps, background jobs, store uploads (`store_uploads_available`:
+whether `toft store` and the SDKs' signed-URL calls have a data plane here —
+`uploads` beside it is about source bundles), and the interpreter versions a new
+app is judged against. Every one of those is otherwise learned from a refusal, so
 run it once before the first deploy. `--json` is the install's own
 `/me/capabilities` document with the identity beside it.
 
@@ -735,7 +737,7 @@ with `toft api`, which is the point of the column on the right:
 |---|---|
 | An app's name, slug, branch, embedding origins or listing | Not in the CLI. `PATCH /api/v1/apps/{id}` with the field, or the Settings page. Environment variables and visibility have verbs: `toft env`, `toft visibility` |
 | Creating, editing or deleting a scheduled task | `toft task create\|edit\|delete`, with a full personal key |
-| A notebook's re-render schedule | Not in the CLI, and not a scheduled task — it produces a new rendered release rather than calling a path. The Automation tab, or `PUT`/`DELETE /api/v1/apps/{id}/render-schedule` |
+| A notebook's re-render schedule | Not in the CLI, and not a scheduled task — it produces a new rendered release rather than calling a path (a task on a rendered document is refused, `rendered_document`). The Automation tab, or `PUT`/`DELETE /api/v1/apps/{id}/render-schedule` |
 | An app's tags | Not in the CLI. `PUT /api/v1/apps/{id}/tags` with the ids of tags that already exist; creating the tags themselves is an administrator's |
 | Grants, storage mappings, integrations | Administrator surfaces, in the UI or the API |
 | Publishing from RStudio | Not `toft`'s: RStudio's *Add account* takes the install's address as a Posit Connect server, signs in through the same approval page as `toft login`, and publishes with rsconnect. Its routes are under `/__api__`; an agent deploys with `toft` |
