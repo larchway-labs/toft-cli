@@ -435,7 +435,7 @@ when `--yes` is passed, `CI` is set, or stdin is not a terminal — and then it
 **refuses rather than hanging** on a question nobody can answer. Pass `--yes` to
 anything that would ask (`toft create`, `toft rollback`, `toft task delete`).
 
-`-q` drops the narration and keeps the answer on stdout — and never the reason one item of a `store cp`/`mv`/`rm` batch failed. Under `--json` stdout is JSON only: `create` prints its URL to stderr there (it is in the result object). Table timestamps are local time with the zone named; every JSON field is UTC. `--json` is on every
+`-q` drops the narration and keeps the answer on stdout — and never the reason one item of a `store cp`/`mv`/`rm` batch failed, or the sentence saying why a deploy failed. Under `--json` stdout is JSON only: `create` prints its URL to stderr there (it is in the result object). Table timestamps are local time with the zone named; every JSON field is UTC. `--json` is on every
 command. `--no-color` (or `NO_COLOR`) for a clean log.
 
 **A refusal is JSON too.** Under `--json` anything that exits non-zero without

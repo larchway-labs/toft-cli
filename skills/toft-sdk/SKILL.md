@@ -151,6 +151,11 @@ required = true
 A job declared here versions with the code it runs, and a rollback takes the
 command back with it.
 
+**A Go job runs the binary the build made, which is `./toft-app`** — the build
+is `go build -o toft-app`, and a job should not compile anything. One binary
+serves both entrypoints, so dispatch on the arguments:
+`command = "./toft-app job nightly-report"`.
+
 **A program with no web server is a batch app.** Add an empty `[batch]` table
 (and `language = "python"` if the repository has more than one language's
 project file): the deploy installs dependencies, starts nothing, and the app's
@@ -246,7 +251,9 @@ languages: `not_mapped` (no resource by that name), `ambiguous_mount` (one name
 mounted twice and no folder named), `not_mounted` (`.path`/`put` on a store
 reached over signed URLs), `insufficient_access`, `already_exists` (an existing
 name at `write`), `not_a_store` and `invalid_name` — every one `retryable: false`
-(in R a `toft_error` condition with `status` NA). `who()` answering nobody over
+(in R a `toft_error` condition with `status` NA). A call that needs a variable the
+platform injects and finds none is `off_platform` — or `job_send_only` when a job
+asks for the app token it is never given — and never retryable either. `who()` answering nobody over
 an **API key** is the same fact from the other side: the gateway authorizes a key
 as its owner and asserts no person to the app; a signed-in browser —
 `toft fetch --session` — is what carries a viewer.
