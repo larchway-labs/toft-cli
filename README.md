@@ -157,6 +157,11 @@ using.
 `toft` detects that nothing can answer a prompt — stdin is not a terminal, or `CI`
 is set — and exits rather than hanging on a confirmation nobody can see.
 
+In a terminal, `toft` draws its output: tables with headers, colored status
+badges, a live view of each deploy and a summary when it finishes. When the
+output is piped, redirected or captured by CI it is plain text with no color
+codes, and `--json` gives you the same answers in a form a script can parse.
+
 A whole pipeline is the same shape. Each step fails the build if it fails, so
 you do not need to check anything yourself:
 

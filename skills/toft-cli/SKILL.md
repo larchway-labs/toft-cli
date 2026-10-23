@@ -479,7 +479,11 @@ when `--yes` is passed, `CI` is set, or stdin is not a terminal — and then it
 anything that would ask (`toft create`, `toft rollback`, `toft deployments prune`).
 
 `-q` drops the narration and keeps the answer on stdout — and never the reason one item of a `store cp`/`mv`/`rm` batch failed, or the sentence saying why a deploy failed. Under `--json` stdout is JSON only: `create` prints its URL to stderr there (it is in the result object). Table timestamps are local time with the zone named; every JSON field is UTC. `--json` is on every
-command. `--no-color` (or `NO_COLOR`) for a clean log.
+command. `--no-color` (or `NO_COLOR`) for a clean log. On a terminal the
+answers are drawn — a header over each table, status badges, a panel at the end
+of a deploy, `✗` before a refusal instead of `toft:` — and piped or redirected
+they are the plain lines quoted here, with no escape codes. Parse `--json`, not
+either.
 
 **A refusal is JSON too.** Under `--json` anything that exits non-zero without
 having already written a result object writes one instead of leaving you to parse
