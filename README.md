@@ -51,7 +51,7 @@ plain folder deploys.
 | `toft logs` | The app's log. `--follow`, or `--deploy <id>` for one build's output |
 | `toft rollback [id]` | Back to the previous deployment. Names it before it acts, and the release now serving once it is done |
 | `toft create [dir]` | Make a new app and deploy this directory into it. Tells you the name it will take and asks first. `--repo <url>` to build from a repository instead, and `--subdir <folder>` with it to build one folder of a repository that holds several apps. A slug you named that is taken is refused rather than renamed. `--owner-group <name\|id>` gives the app to a group — required with a deploy key, which belongs to nobody |
-| `toft redeploy` | Build again from the app's own repository. Sends nothing from your disk |
+| `toft redeploy` | Build again from the app's own source — its repository, or what was last uploaded. Sends nothing from your disk |
 | `toft restart` / `toft start` | Restart the app, starting it if it is stopped. `--wait` waits until it is up and fails if it never comes up |
 | `toft stop` | Stop the app |
 | `toft env list\|set\|unset` | The app's environment variables. `set KEY=VALUE`, `--sensitive` to make a value write-only, `--restart` to apply it straight away |

@@ -187,7 +187,10 @@ toft rollback --yes               # back to the deployment before the serving on
   does not resolve says where it was read (`.toft.toml [app]`), unless you
   typed it.
 - **`toft redeploy`** rebuilds from the repository the app names and uploads
-  nothing. On an uploaded app it is refused, naming `toft deploy`.
+  nothing. On an uploaded app it rebuilds from the source last uploaded — what
+  you want after an environment change or an interpreter upgrade, without
+  sending your tree again; one that has never deployed successfully is refused,
+  naming `toft deploy`.
 - **`toft restart --wait`** starts a stopped app and fails if it does not come up.
   `toft start` is the same call under the name that reads right when it is
   stopped; `toft stop` stops it, and says `already stopped` (`"changed": false`
@@ -269,6 +272,7 @@ that reason — so in most cases you do not need a second command:
 | `manifest_invalid` | `toft.toml` was read and rejected. A one-file fix, and the message says which |
 | `runtime_version` | The language version you declared is not available on this install |
 | `source_unavailable` | The clone, the credential, or a pruned rollback target — the code could not be fetched |
+| `disk_full` | The install's disk is too full to take another release. Not your app; ask an administrator to free or grow it |
 | `internal_error` | The platform, not your app. Retry, then tell somebody |
 
 A `reason` you do not recognise means the install is newer than your `toft`; treat
