@@ -451,7 +451,9 @@ send = toft.notify.status(send)
 
 Nothing here blocks on delivery: a send returns once the platform has accepted
 and recorded it, and the record — not the message — is what a workflow may rely
-on. A send never fails the request that triggered it.
+on. A send never fails the request that triggered it. In R the read-back is
+`notify_status(send)` — `notify()`'s answer or its `send_id` — with `status`,
+`done`, `delivered`, `blocked` and `error`.
 
 ### Background work
 
