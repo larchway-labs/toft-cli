@@ -637,14 +637,20 @@ consumes it.
 
 ## The full documentation
 
+Every page below is Markdown — fetch it as is. The index of every page, each
+with a one-line summary, is
+https://larchway-labs.github.io/toft-docs/latest/llms.txt; any page's address
+with `.md` in place of its final `/` is the same page as Markdown, and
+`llms-cli.txt` / `llms-user.txt` beside the index are a whole guide in one file.
+
 | What | Where |
 |---|---|
-| The SDK, by topic | https://larchway-labs.github.io/toft-docs/latest/cli/sdk/what-it-is/ |
-| Every call, per language (Python, Node, R, Go) | https://larchway-labs.github.io/toft-docs/latest/cli/reference/languages/ |
-| How the build reads a repository | https://larchway-labs.github.io/toft-docs/latest/user/build/how-detection-works/ |
-| `toft.toml` | https://larchway-labs.github.io/toft-docs/latest/user/build/toft-toml/ |
-| Base paths | https://larchway-labs.github.io/toft-docs/latest/user/build/base-paths/ |
-| Jobs | https://larchway-labs.github.io/toft-docs/latest/user/automation/jobs/ |
+| The SDK, by topic | https://larchway-labs.github.io/toft-docs/latest/cli/sdk/what-it-is.md |
+| Every call, per language (Python, Node, R, Go) | https://larchway-labs.github.io/toft-docs/latest/cli/reference/languages.md |
+| How the build reads a repository | https://larchway-labs.github.io/toft-docs/latest/user/build/how-detection-works.md |
+| `toft.toml` | https://larchway-labs.github.io/toft-docs/latest/user/build/toft-toml.md |
+| Base paths | https://larchway-labs.github.io/toft-docs/latest/user/build/base-paths.md |
+| Jobs | https://larchway-labs.github.io/toft-docs/latest/user/automation/jobs.md |
 
 The SDK source is public at `larchway-labs/toft-sdk` (Apache-2.0), one tag per
 Toft release; the copy an app runs is the one the build installs.

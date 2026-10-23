@@ -225,6 +225,10 @@ working on.
 The full guide — every command and flag, signing in, deploying, CI and the app
 SDK — is at **https://larchway-labs.github.io/toft-docs/latest/cli/**. Toft's user and admin guides are on the same site.
 
+For a coding agent, the same site is Markdown: https://larchway-labs.github.io/toft-docs/latest/llms.txt
+lists every page, and any page's address with `.md` in place of its final `/` is
+that page as Markdown.
+
 ## Verifying a download
 
 ```bash
