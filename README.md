@@ -193,15 +193,26 @@ to ship an app here without a person watching:
 | [`skills/toft-cli`](skills/toft-cli/SKILL.md) | signing in without a browser, the deploy loop, the exit codes, what goes in the bundle, and what `toft` deliberately does not do |
 | [`skills/toft-sdk`](skills/toft-sdk/SKILL.md) | writing the app itself: `PORT`, `HOST` and `BASE_PATH`, how the build detects a framework, `toft.toml`, and the app SDK |
 
-For Claude Code, drop them where it looks for skills:
+`toft skill` prints the copy written for the binary you have. Write each into
+the folder your agent reads skills from:
+
+| Agent | Folder |
+|---|---|
+| Claude Code | `~/.claude/skills` |
+| Codex, Cursor, and other agents that read the Agent Skills format | `~/.agents/skills` |
 
 ```bash
+dir=~/.claude/skills        # or ~/.agents/skills
 for s in toft-cli toft-sdk; do
-    mkdir -p ~/.claude/skills/$s
-    curl -fsSL -o ~/.claude/skills/$s/SKILL.md \
-        https://raw.githubusercontent.com/larchway-labs/toft-cli/main/skills/$s/SKILL.md
+    mkdir -p $dir/$s
+    toft skill $s > $dir/$s/SKILL.md
 done
 ```
+
+For one project only, use `.claude/skills` or `.agents/skills` in that
+repository instead. Run the loop again after upgrading `toft`. The files in
+`skills/` here describe the latest release, which may be newer than your
+`toft`.
 
 **No local runtime is required to deploy.** The install builds: it resolves and
 installs dependencies, picks the language version, and starts the app. An agent
