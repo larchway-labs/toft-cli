@@ -368,8 +368,9 @@ curl -fsS -H "Authorization: Bearer $TOFT_TOKEN" "$URL/"
 ```
 
 The gateway consumes the key and strips it: the app process never sees it, and
-never learns which credential the request arrived on. An app key (`toft_…`) works
-the same way for the one app it grants.
+never learns which credential the request arrived on. A script or an assistant
+calling an app is an account of its own, granted on that app, using its own
+personal key the same way.
 
 **In a headless browser** — for a screenshot, or a page that only exists after
 its JavaScript has run — send the same header on every request the page makes:

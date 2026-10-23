@@ -413,6 +413,9 @@ when there genuinely is more than one; an empty folder names the root.
 
 In R, `scratch_dir()` is scratch space and is **not** where storage lives. They
 are two questions with two answers, and `mounts()` is how you ask the second.
+A mount there is a list, so `m$path` cannot refuse: it is `""` for a store
+reached by signed URLs, and `file.path(m$path, "x.csv")` is then `/x.csv`. Use
+`mount_path(m)`, which answers the path or refuses `not_mounted`.
 
 ### The app's one document
 
@@ -428,8 +431,10 @@ not `None` — so a caller does not need a second read to see its own change.
 default), and waits out the app's rate limit (60 calls a minute, burst 10)
 without spending them — up to 30 waits, past which it raises the `rate_limited`
 refusal itself, with `retry_after`. A give-up after conflicts carries
-`version_conflict`, in Go as in Python and Node. In R, which has no
-`update`, a get-then-set under several writers can lose one.
+`version_conflict`, in Go as in Python and Node. In R, `app_data_update(fn)`
+does the same against conflicts (five attempts), and `app_data_read()` answers
+`data`, `version` and `empty` — `app_data_get()` alone drops the version, so a
+get-then-set under several writers can lose one.
 
 One JSON document per app, 256 KiB, no keys and no queries — it survives
 restart, redeploy and rollback. Never-written, cleared and `{}` stay tellable
