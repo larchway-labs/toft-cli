@@ -290,8 +290,11 @@ with `retry_after`. So do the storage refusals, in all four
 languages: `not_mapped` (no resource by that name), `ambiguous_mount` (one name
 mounted twice and no folder named), `not_mounted` (`.path`/`put` on a store
 reached over signed URLs), `insufficient_access`, `already_exists` (an existing
-name at `write`), `not_a_store` and `invalid_name` — every one `retryable: false`
-(in R a `toft_error` condition with `status` NA). A call that needs a variable the
+name at `write`), `not_found` (a download of a name the store does not hold —
+the first night of a nightly job), `not_a_store` and `invalid_name` — every one
+`retryable: false` (in R a `toft_error` condition with `status` NA, 404 for
+`not_found`). Any other status the object store answers is still the language's
+error type, with `status`, and no code. A call that needs a variable the
 platform injects and finds none is `off_platform` — or `job_send_only` when a job
 asks for the app token it is never given — and never retryable either. `who()` answering nobody over
 an **API key** is the same fact from the other side: the gateway authorizes a key

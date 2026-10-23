@@ -549,7 +549,7 @@ is made**; there is no verb that creates, edits or deletes one, and a deploy key
 ships them with the code. Jobs are on by default.
 
 - **`toft job list`** prints each job with its schedule and zone, its
-  `expect_within` window, its params (`--param region=<emea|amer|apac>`), its
+  `expect_within` window, its params (`--param region=<string>  required, one of emea|amer|apac`), its
   effective limits with their source — `timeout 45m (declared)`, `memory 512 MB
   (install default)`, `timeout 15m (clamped by admin, declared 45m)` — and
   where runs go. `toft job run` with no name lists the same jobs with how to
