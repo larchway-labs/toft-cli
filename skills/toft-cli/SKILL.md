@@ -440,7 +440,8 @@ for an empty one — and `"sensitive": true` with no value for a write-only one.
 - **A pruned deployment is no longer a rollback target.** The serving release,
   a running build and a rollback's source are never deleted.
 - **`toft delete` never takes the slug from `toft.toml` or `TOFT_APP`** — it has to
-  be typed — and it asks, so unattended it needs `--yes`.
+  be typed, as `toft delete <slug>` or `--app <slug>` — and it asks, so unattended
+  it needs `--yes`.
 
 ## Exit codes
 
