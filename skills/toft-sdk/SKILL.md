@@ -458,6 +458,33 @@ on. A send never fails the request that triggered it. In R the read-back is
 `notify_status(send)` — `notify()`'s answer or its `send_id` — with `status`,
 `done`, `delivered`, `blocked` and `error`.
 
+### Reading and writing a folder with the provider's own SDK
+
+Where an administrator has switched on **Let apps get access tokens** on the
+SharePoint, OneDrive or Google Drive connection attached to the app, the app can
+get that connection's own short-lived token and call Graph or Drive directly —
+list, read, replace, delete — with no secret in its environment:
+
+```python
+token = toft.access_token("sharepoint")      # Token(value, expires_at, resource, folder)
+token.folder.drive_id, token.folder.item_id  # where this app was attached
+client = GraphServiceClient(toft.azure_credential("sharepoint"))   # msgraph-sdk
+```
+
+Node `toft.accessToken(kind)` and `toft.azureCredential(kind)`; Go
+`toft.AccessToken(ctx, kind)`; R `access_token(kind)` (use `tok$value` with
+`httr2::req_auth_bearer_token`). For Drive, pass `token.value` to
+`google.oauth2.credentials.Credentials`. Each SDK caches per kind and fetches
+again five minutes before expiry, so calling it before every request is cheap.
+
+- **The folder is a hint, not a fence.** The token reaches everything the
+  connection's grant reaches — for a `Sites.Selected` grant, the whole site.
+- `403 <kind>_tokens_off` means the switch is off; `409 token_too_wide` means the
+  connection's Entra app holds permissions beyond files, which Toft refuses to
+  hand out. Check `toft.app.can("sharepoint.token")` at startup.
+- A token outlives a detach by up to an hour. Never log it.
+- A job may get one too, while its run is in flight.
+
 ### Background work
 
 A job is a different entrypoint of *this same app*, from the same release, with
