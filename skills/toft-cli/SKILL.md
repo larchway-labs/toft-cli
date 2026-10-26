@@ -131,7 +131,9 @@ run it once before the first deploy. `--json` is the install's own
 **The skill you are reading came out of a binary.** `toft skill toft-cli` and
 `toft skill toft-sdk` print the copies embedded in the `toft` on your PATH, which
 describe exactly the commands it has. If this file and `toft --help` disagree,
-replace this file with `toft skill toft-cli`.
+trust `toft skill toft-cli`. `toft skill install` (which the installer runs)
+puts a pointer to that command in `~/.claude/skills` and `~/.agents/skills`
+rather than a copy, so an upgrade of `toft` is an upgrade of its skills.
 
 ## The loop
 
@@ -822,16 +824,16 @@ These pages are the reference this skill is the field manual for. They describe
 the install's own version at `/<minor>/`; `latest/` is the newest. Every page
 below is Markdown — fetch it as is. The index of every page, each with a
 one-line summary, is `<site>/<minor>/llms.txt`
-(https://larchway-labs.github.io/toft-docs/latest/llms.txt); any page's address
+(https://docs.gettoft.com/latest/llms.txt); any page's address
 with `.md` in place of its final `/` is the same page as Markdown, and
 `llms-cli.txt`, `llms-user.txt` and `llms-admin.txt` beside the index are a
 whole guide in one file.
 
 | What | Where |
 |---|---|
-| Installing `toft` | https://larchway-labs.github.io/toft-docs/latest/cli/cli/installing.md |
-| Signing in and API keys | https://larchway-labs.github.io/toft-docs/latest/cli/cli/signing-in.md |
-| Deploying | https://larchway-labs.github.io/toft-docs/latest/cli/cli/deploying.md |
-| Every command and flag | https://larchway-labs.github.io/toft-docs/latest/cli/cli/commands.md |
-| The app SDK | https://larchway-labs.github.io/toft-docs/latest/cli/sdk/what-it-is.md |
-| The user guide (deploying from git, sharing, jobs) | https://larchway-labs.github.io/toft-docs/latest/user/start/what-toft-is.md |
+| Installing `toft` | https://docs.gettoft.com/latest/cli/cli/installing.md |
+| Signing in and API keys | https://docs.gettoft.com/latest/cli/cli/signing-in.md |
+| Deploying | https://docs.gettoft.com/latest/cli/cli/deploying.md |
+| Every command and flag | https://docs.gettoft.com/latest/cli/cli/commands.md |
+| The app SDK | https://docs.gettoft.com/latest/cli/sdk/what-it-is.md |
+| The user guide (deploying from git, sharing, jobs) | https://docs.gettoft.com/latest/user/start/what-toft-is.md |

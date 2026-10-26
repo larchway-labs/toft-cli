@@ -193,26 +193,23 @@ to ship an app here without a person watching:
 | [`skills/toft-cli`](skills/toft-cli/SKILL.md) | signing in without a browser, the deploy loop, the exit codes, what goes in the bundle, and what `toft` deliberately does not do |
 | [`skills/toft-sdk`](skills/toft-sdk/SKILL.md) | writing the app itself: `PORT`, `HOST` and `BASE_PATH`, how the build detects a framework, `toft.toml`, and the app SDK |
 
-`toft skill` prints the copy written for the binary you have. Write each into
-the folder your agent reads skills from:
+The installer sets them up for you: it runs `toft skill install`, which writes
+both into the skills folder of each coding agent it finds —
 
 | Agent | Folder |
 |---|---|
 | Claude Code | `~/.claude/skills` |
 | Codex, Cursor, and other agents that read the Agent Skills format | `~/.agents/skills` |
 
-```bash
-dir=~/.claude/skills        # or ~/.agents/skills
-for s in toft-cli toft-sdk; do
-    mkdir -p $dir/$s
-    toft skill $s > $dir/$s/SKILL.md
-done
-```
+What it writes is a pointer, not a copy: each SKILL.md tells the agent to run
+`toft skill toft-cli` (or `toft-sdk`), which prints the instructions built into
+the `toft` you have. Upgrading `toft` updates the skills; there is nothing to
+re-run.
 
-For one project only, use `.claude/skills` or `.agents/skills` in that
-repository instead. Run the loop again after upgrading `toft`. The files in
-`skills/` here describe the latest release, which may be newer than your
-`toft`.
+Run `toft skill install` yourself after installing an agent, or with
+`--dir .claude/skills` (or `.agents/skills`) for one project only. Pass
+`--no-skills` to the installer to skip this. The files in `skills/` here
+describe the latest release, which may be newer than your `toft`.
 
 **No local runtime is required to deploy.** The install builds: it resolves and
 installs dependencies, picks the language version, and starts the app. An agent
@@ -223,9 +220,9 @@ working on.
 ## Documentation
 
 The full guide — every command and flag, signing in, deploying, CI and the app
-SDK — is at **https://larchway-labs.github.io/toft-docs/latest/cli/**. Toft's user and admin guides are on the same site.
+SDK — is at **https://docs.gettoft.com/latest/cli/**. Toft's user and admin guides are on the same site.
 
-For a coding agent, the same site is Markdown: https://larchway-labs.github.io/toft-docs/latest/llms.txt
+For a coding agent, the same site is Markdown: https://docs.gettoft.com/latest/llms.txt
 lists every page, and any page's address with `.md` in place of its final `/` is
 that page as Markdown.
 

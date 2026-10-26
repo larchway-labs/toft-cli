@@ -4,8 +4,9 @@
 #   curl -fsSL https://raw.githubusercontent.com/larchway-labs/toft-cli/main/install.sh | sh
 #
 # Downloads one binary for this machine, checks it against the published
-# SHA256SUMS, and puts it somewhere on PATH. Nothing else — no daemon, no
-# configuration, no root.
+# SHA256SUMS, and puts it somewhere on PATH. Then `toft skill install` leaves
+# a pointer to the agent skills in ~/.claude/skills and ~/.agents/skills, for
+# whichever exists (--no-skills skips it). No daemon, no configuration, no root.
 #
 # Linux and macOS. Windows does not run this and is refused by name, with
 # somewhere to go.
@@ -37,6 +38,8 @@ VERSION=$VERSION_DEFAULT
 REPO=$REPO_DEFAULT
 DIR=
 QUIET=0
+SKILLS=1
+SKILLS_WRITTEN=
 
 usage() {
     cat <<'EOF'
@@ -50,6 +53,9 @@ Options:
                     ~/.local/bin otherwise. sudo is never used.
   --version X.Y.Z   install that release instead of the one this script was
                     published with. `latest` follows the newest release.
+  --no-skills       do not write the agent skills into ~/.claude/skills and
+                    ~/.agents/skills. They are pointers to `toft skill`, so
+                    they never go stale; this only skips writing them.
   -q, --quiet       print the installed path and nothing else
   -h, --help        this
 
@@ -99,6 +105,7 @@ parse_args() {
             shift
             REPO=${1:-}
             ;;
+        --no-skills) SKILLS=0 ;;
         -q | --quiet) QUIET=1 ;;
         -h | --help) usage 0 ;;
         *)
@@ -247,6 +254,17 @@ install_binary() {
         die "could not write $DIR/$BINARY"
 }
 
+# --- Agent skills -------------------------------------------------------------
+#
+# Pointers, not copies: each SKILL.md says to run `toft skill <name>`, so the
+# text an agent follows is always this binary's. Nothing is created where no
+# agent folder exists, and a failure here (an older --version without the
+# subcommand) never fails the install.
+install_skills() {
+    [ "$SKILLS" = 1 ] || return 0
+    SKILLS_WRITTEN=$("$DIR/$BINARY" skill install 2>/dev/null | grep 'SKILL.md$' || true)
+}
+
 # --- What to do next ---------------------------------------------------------
 
 summary() {
@@ -263,6 +281,11 @@ summary() {
         printf '\n  %s%s is not on your PATH.%s Add it:\n\n' "$C_BOLD" "$DIR" "$C_RESET"
         printf '      export PATH="%s:$PATH"\n' "$DIR"
         printf '\n  %s(put that in ~/.zshrc or ~/.bashrc to keep it)%s\n' "$C_DIM" "$C_RESET"
+    fi
+
+    if [ -n "$SKILLS_WRITTEN" ]; then
+        printf '\n  Agent skills (pointers to %stoft skill%s, so they never go stale):\n' "$C_BOLD" "$C_RESET"
+        printf '%s\n' "$SKILLS_WRITTEN" | sed 's/^/      /'
     fi
 
     cat >&2 <<EOF
@@ -285,6 +308,7 @@ main() {
     detect_platform
     resolve_dir
     install_binary
+    install_skills
     summary
 }
 
