@@ -62,7 +62,7 @@ plain folder deploys.
 | `toft job list\|run\|rerun\|wait\|runs\|logs\|cancel` | Jobs — commands your app declares in `toft.toml`, with or without a schedule — which run in a container where the install has a cluster and on the install's own machine where it does not, each with its own timeout and memory limit. `toft job run` waits for the run and fails if it fails; `--follow` shows its log as it goes. `--param k=v` to pass values (a required one you leave out is asked for), `--for <time>` to name the instant the run is for. Nothing is retried automatically: `toft job rerun <id>` runs one again with the same values, and `toft job wait <id>` waits for a run something else started |
 | `toft task` | Removed: scheduled tasks are now jobs with a `schedule` in `toft.toml`. It says so and exits 2 |
 | `toft apps` | The apps you can see. `--mine` |
-| `toft top` | The apps you can see, kept current on a terminal; `q` to quit |
+| `toft top` | The apps you can see, kept current on a terminal (`--mine` for yours); `q` to quit |
 | `toft store ls\|cp\|mv\|mkdir\|rm\|put\|get` | Files in an app's durable store. `cp -r` copies whole folders up and down (`toft://<store>/<path>` is the store side), `mv` renames, `mkdir` makes an empty folder, `rm -r` deletes one. Every path prints as `toft://<store>/<path>`, which every subcommand takes back. `get … -o -` writes to stdout |
 | `toft sdk vendor` | The app SDK this install carries, written into your working directory so your editor, `go build` and your CI can see it |
 | `toft skill [name]` | Print the agent skills written for this version of `toft` — `toft-cli` and `toft-sdk` — to drop into a coding agent's skills folder |

@@ -217,7 +217,8 @@ toft rollback --yes               # back to the deployment before the serving on
   are yours — owned by you or a group you are in, or granted to you, the web
   console's *Mine* (`--json` carries `mine` and `owner_group_id`). It is how to
   find a slug you do not know.
-- **`toft top`** is `toft apps` kept current on a person's terminal. Piped, under
+- **`toft top`** is `toft apps` kept current on a person's terminal, `--mine`
+  included. Piped, under
   `--json` or `TOFT_PLAIN` it is exactly `toft apps`, so an agent gains nothing
   from it.
 - **`toft check`** (or `toft deploy --dry-run`) sends the bundle `toft deploy`
