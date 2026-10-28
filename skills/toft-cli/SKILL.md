@@ -122,7 +122,8 @@ stored credential (`--forget-all` drops every one); it does **not** revoke the k
 
 **Ask before you try: `toft whoami`.** It names the account and its role, the
 credential (`api_key`, `deploy_key` or `session`, its scope and when it
-expires), whether you can create apps, and what the install allows — uploaded
+expires), whether you can create apps (a read-scoped key says `create apps no`
+— it creates nothing), and what the install allows — uploaded
 bundles, public apps, background jobs, store uploads (`store_uploads_available`:
 whether `toft store` and the SDKs' signed-URL calls have a data plane here —
 `uploads` beside it is about source bundles), and the interpreter versions a new
@@ -200,10 +201,17 @@ toft rollback --yes               # back to the deployment before the serving on
   naming `toft deploy`.
 - **`toft restart --wait`** starts a stopped app and fails if it does not come up.
   `toft start` is the same call under the name that reads right when it is
-  stopped; `toft stop` stops it, and says `already stopped` (`"changed": false`
+  stopped, and prints `started` when the app was not running (`--json` carries
+  the install's `action`, `start` or `restart`). On a **document** — a notebook,
+  Quarto or R Markdown app — a restart serves the same rendered pages again, and
+  the answer carries a `note` saying so: a changed variable reaches the page at
+  the next deploy (`toft redeploy`), and a job at its next start; `toft stop` stops it, and says `already stopped` (`"changed": false`
   under `--json`) when there was nothing to do.
 - **`toft apps`** lists the apps this credential can see, `--mine` for the ones it
   owns. It is how to find a slug you do not know.
+- **`toft top`** is `toft apps` kept current on a person's terminal. Piped, under
+  `--json` or `TOFT_PLAIN` it is exactly `toft apps`, so an agent gains nothing
+  from it.
 - **`toft check`** (or `toft deploy --dry-run`) sends the bundle `toft deploy`
   would send and the install answers with the decisions a deploy makes before
   it builds: what the app is, the interpreter it would get, the jobs and the
@@ -231,6 +239,12 @@ toft rollback --yes               # back to the deployment before the serving on
   since lowered as a `limit_clamped` warning. A declaration above the ceiling,
   or a removed key, is a problem with its `code` (`limit_exceeds_ceiling`,
   `removed_key`) and a `hint` naming the line to write.
+  **`toft create` and `toft deploy` refuse at the upload whatever `toft check`
+  refuses** — static plus `[jobs]`, a pin the install lacks, a job over the
+  ceiling — with check's own code (`manifest_invalid`, `runtime_version`,
+  `limit_exceeds_ceiling`), before any build; a refused create leaves no app and
+  claims no slug. (An unrecognised tree is still reported by the build's detect
+  step.)
 - **`--verify <path>`** on `toft deploy`, `redeploy`, `rollback` and `create`
   requests that path as you once the platform says the deploy succeeded, and
   exits 1 unless it answers 2xx or 3xx. The platform's own readiness probe only
@@ -438,7 +452,14 @@ for an empty one — and `"sensitive": true` with no value for a write-only one.
   before anything is sent (`invalid_env_name`, `reserved_env_name`).
 - **An environment change applies at the next start**, not the next deploy:
   `toft restart`, or `--restart` on the same command. The document says
-  `restart_needed`.
+  `restart_needed`. **A document app** (notebook, Quarto, R Markdown) reads its
+  environment when it is rendered, so there the change reaches the page at the
+  next deploy: `toft env set` says so and `--json` carries `redeploy_needed`
+  instead.
+- **`SECRET=` keeps a stored sensitive value** rather than blanking it, and
+  `toft env set` says it was *kept* (`kept: [...]` under `--json`), not set;
+  `toft env unset SECRET` is what removes it. A command that changed nothing
+  says `nothing changed` and promises no restart.
 - **`toft env set` keeps every other variable**, sensitive ones included — the
   route replaces the whole map, and the command writes back what it read.
   A credential that may see the names but not the values is refused before
@@ -448,7 +469,13 @@ for an empty one — and `"sensitive": true` with no value for a write-only one.
   "public_apps_disabled"`) or by its license (`not_licensed`); `toft whoami`
   says in advance whether it is allowed.
 - **A pruned deployment is no longer a rollback target.** The serving release,
-  a running build and a rollback's source are never deleted.
+  a running build, a rollback's source and a release an unfinished job run is
+  pinned to are never deleted. `toft deployments prune` says what it kept and
+  why — a `kept <id6>: <reason> — <remedy>` line per release, and `kept: [{id,
+  reason, remedy}]` beside `deleted` under `--json` —
+  and deleting a protected one is refused with its own remedy as the `hint`:
+  for a job-pinned release, wait for or cancel the run (`toft job runs`,
+  `toft job wait`, `toft job cancel`), not deploy.
 - **`toft delete` never takes the slug from `toft.toml` or `TOFT_APP`** — it has to
   be typed, as `toft delete <slug>` or `--app <slug>` — and it asks, so unattended
   it needs `--yes`.
@@ -489,12 +516,32 @@ when `--yes` is passed, `CI` is set, or stdin is not a terminal — and then it
 **refuses rather than hanging** on a question nobody can answer. Pass `--yes` to
 anything that would ask (`toft create`, `toft rollback`, `toft deployments prune`).
 
+**An agent sets `TOFT_PLAIN=1`.** Detection reads terminals, and an agent driving
+`toft` through a pty looks like a person to it — drawn tables, a live tree, a
+question waiting for a key. `TOFT_PLAIN=1` (or `--plain`) says the reader is a
+program: every command answers exactly as it does piped, with no colour, and
+every question refuses naming its flag. Export it once in the agent's shell.
+`--plain=false` overrides it for one command.
+
+Questions are asked only of a person on a terminal for **both** output streams
+and stdin: there, a confirmation is a yes/no with No selected, a missing
+required `--param` is asked, and a read command (`status`, `logs`, `events`,
+`deps`, `restart`/`start`/`stop`, `redeploy`, `rollback`, `job`) in a directory
+with no app linked offers a list of apps for that run, writing nothing. **`toft
+deploy` and `toft check` never offer one.** Anywhere else — `TOFT_PLAIN`, `CI`,
+`--yes`, any stream piped — each is the refusal it always was: the `toft link`
+refusal (exit 2), `param_required`, the flag that would have answered.
+
 `-q` drops the narration and keeps the answer on stdout — and never the reason one item of a `store cp`/`mv`/`rm` batch failed, or the sentence saying why a deploy failed. Under `--json` stdout is JSON only: `create` prints its URL to stderr there (it is in the result object). Table timestamps are local time with the zone named; every JSON field is UTC. `--json` is on every
 command. `--no-color` (or `NO_COLOR`) for a clean log. On a terminal the
 answers are drawn — a header over each table, status badges, a panel at the end
 of a deploy, `✗` before a refusal instead of `toft:` — and piped or redirected
-they are the plain lines quoted here, with no escape codes. Parse `--json`, not
-either.
+they are the plain lines quoted here, with no escape codes — piped `toft events`
+keeps each event's detail on stdout beside its headline, and an R build runs
+with `NO_COLOR` so renv's colour codes stay out of the build log. Parse
+`--json`, not either. **A credential near its expiry is warned about** on
+stderr with both doors: `toft login <url>` (a browser) or, unattended, a new key
+through `toft login --token-stdin` — a deploy key only the second.
 
 **A refusal is JSON too.** Under `--json` anything that exits non-zero without
 having already written a result object writes one instead of leaving you to parse
@@ -606,13 +653,21 @@ ships them with the code. Jobs are on by default.
 `succeeded` is exit 0; `failed`, `timed_out`, `out_of_memory`, `cancelled` and
 `skipped` are exit 1, with the reason beside it in words (`exit 3: connection
 refused`, `timed out after 45m`, `stopped at 1024 MB`) and the tail of the log
-printed unasked. `skipped` is a scheduled run that `overlap = "skip"` stood down
-because the previous one was still going — it did no work, so it is not a
-success. A full queue (`queue_full`) is exit 1 and retryable; a job the app does
+printed unasked. `skipped` is a scheduled run that did not start — `overlap =
+"skip"` stood it down because the previous one was still going, or the app's
+queue was full (`the app's queue was full (N runs were waiting, …)`, beside a
+`job_schedule_skipped` event in `toft events`) — it did no work, so it is not a
+success. Under `overlap = "queue"` a firing waits behind the previous scheduled
+run of the same job; a run you start is never held behind one. A full queue (`queue_full`) is exit 1 and retryable; a job the app does
 not declare (`no_such_job`) or a param it refuses (`param_type`,
 `param_choice`, `param_unknown` for a name a job with declared params does not
 declare) is exit 2. Where the install cannot run jobs for this app,
-`toft` says why as exit 2 (`jobs_unavailable`).
+`toft` says why as exit 2 (`jobs_unavailable`). **A static app runs no jobs**:
+`toft job list` and `toft job run` say so rather than advising a `[jobs]` table,
+which a static deploy refuses. **While an app is locked** `toft job list` shows
+each schedule as `held by the app's lock — no firing runs until it is lifted`
+instead of a next firing; `--json` carries `held_by_lock: true` and no
+`next_run_at`.
 
 **`toft task` is gone.** Scheduled tasks were replaced by jobs: it refuses with
 `removed_command` (exit 2) and names the replacement — a `[jobs.<name>]` with a

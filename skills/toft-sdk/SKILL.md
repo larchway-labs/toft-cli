@@ -39,7 +39,8 @@ Detected from the tree, in this order:
 | **Node** | any `package.json` with a `start` script. A `build` script runs first if present |
 | **Shiny** | `app.R`, or `ui.R` **and** `server.R` together. An `.Rmd` declaring `runtime: shiny` is a Shiny app, not a document |
 | **plumber** | `plumber.R`, or an `.R` file carrying `#*` annotations |
-| **R Markdown / Quarto** | one `.Rmd` or `.qmd` at the root, rendered once at build time and served as files |
+| **R Markdown / Quarto** | one `.Rmd`, or one `.qmd` whose engine is R (`engine: knitr`, or R chunks), at the root — rendered once at build time and served as files |
+| **Notebook** | one `.ipynb`, or one `.qmd` whose engine is Python (`engine: jupyter`, or no R chunks) — rendered the same way, framework `notebook`, before Python is considered, so a `requirements.txt` beside it does not make it a Python app |
 | **Flask / FastAPI / Streamlit** | `flask` / `fastapi` / `streamlit` in `requirements.txt` |
 | **Generic Python** | `requirements.txt` with no framework recognised |
 | **Go** | `go.mod` plus a `main` package — module root, else the first `cmd/*`. Built into one binary |
@@ -112,7 +113,10 @@ runs start.
 
 **`static` is the exception that really has none.** A `[jobs]` table in a static
 tree is refused before anything is built, with `manifest_invalid` and the reason:
-a folder of files has no runtime to run a command in.
+a folder of files has no runtime to run a command in. The same holds for what
+an administrator attaches: a storage mapping or an integration (email, Slack, …)
+on a static app is refused, 409 `static_app` — there is no process to mount into
+or send from.
 
 ## `toft.toml`
 
@@ -177,6 +181,13 @@ ceiling under a job already deployed.
 
 **`overlap = "skip"`** stands a scheduled run down when the previous one is
 still going: it is recorded as a `skipped` run rather than not at all.
+**`overlap = "queue"`** (the default) waits: a firing is queued behind the
+previous scheduled run of the same job and starts when that one ends. Overlap is
+the schedule's alone — a run somebody starts is never held behind a scheduled
+one. A firing the app's full queue refuses is a `skipped` run too, its reason
+`the app's queue was full (N runs were waiting, …)`, beside a
+`job_schedule_skipped` event. Each schedule tick is one run, and a deploy that
+leaves a schedule unchanged leaves its next firing where it was.
 **`notify`** tells the app's owners about every failed run (`failures`) or
 every finished run (`always`), beyond the one alert a failing job raises anyway;
 skipped and cancelled runs say nothing.
@@ -199,7 +210,10 @@ with the same timeout, memory limit and record. `toft job list` says which.
 administrator attached to the app) works inside a job, with the run's own
 credential, and so does `toft.store(...)` on a store the app maps — over signed
 URLs where it is not mounted; everything else on the app surface — `toft.data`,
-`toft.who`, starting another job — is refused from a job with `job_send_only`.
+`toft.who`, starting another job — is refused from a job with `job_send_only`,
+a refusal that names the job and the run, says it is by design rather than a
+broken deploy, and hints the two ways round: do it from the service process, or
+carry the result out with the run's write-output-JSON call.
 
 ## The SDK
 
@@ -277,8 +291,9 @@ an install older than the field. Log the `hint` beside the sentence; it is the
 part a person reading your logs acts on.
 
 A refusal the SDK makes itself, before any request, carries the same fields:
-`mine()` on the app acting as itself, and `viewer(headers)` with nobody signed
-in, are both `no_viewer`; a `wait()` that would outlive the request being served
+`mine()` on the app acting as itself, and `viewer(headers)` on a request with
+no act-for header (an API key, a health check, a local server), are both
+`no_viewer`; a `wait()` that would outlive the request being served
 is `would_outlive_request`, hint `return toft.jobs.respond(run)`; an argument
 the SDK rejects locally (an email with no recipient, blank text, an empty send
 or session id, app data that is not an object) is `bad_request`; and
@@ -288,13 +303,16 @@ still going (Python's is also a `TimeoutError`; a cancelled Go context is
 `wait_cancelled`). A start into a full queue is `queue_full`, `retryable: true`,
 with `retry_after`. So do the storage refusals, in all four
 languages: `not_mapped` (no resource by that name), `ambiguous_mount` (one name
-mounted twice and no folder named), `not_mounted` (`.path`/`put` on a store
+mounted twice and no folder named — the sentence names the call you made, so
+`store(…, folder=…)` for a `store` and `storage(…, folder=…)` for a `storage`), `not_mounted` (`.path`/`put` on a store
 reached over signed URLs), `insufficient_access`, `already_exists` (an existing
 name at `write`), `not_found` (a download of a name the store does not hold —
 the first night of a nightly job), `not_a_store` and `invalid_name` — every one
 `retryable: false` (in R a `toft_error` condition with `status` NA, 404 for
 `not_found`). Any other status the object store answers is still the language's
-error type, with `status`, and no code. A call that needs a variable the
+error type, with `status`, and no code. R's store helpers raise the same
+`toft_error` for their own argument checks — `bad_request` (no mount, no local
+file) — and for a malformed `TOFT_STORAGE`, `storage_env_invalid`. A call that needs a variable the
 platform injects and finds none is `off_platform` — or `job_send_only` when a job
 asks for the app token it is never given — and never retryable either. `who()` answering nobody over
 an **API key** is the same fact from the other side: the gateway authorizes a key
@@ -372,6 +390,9 @@ An administrator attaches an integration to an app; the app never holds the
 Slack token or the mail credential and never names the channel. **Ask before you
 send** — an app that checks at startup can tell someone "email is not enabled
 for this app" on a screen instead of leaving it to be found at 2am in a log.
+**A mapping change reaches the service at its next deployment, and each job at
+its next run** — a run is a workload of its own, described when it starts, so an
+every-minute schedule picks a new mapping up within the minute.
 
 ### Files
 
@@ -592,7 +613,11 @@ into the app's storage first, and a param names where.
 acting as itself. `toft.viewer(request.headers).jobs` is the app acting for the
 person looking at the page (`started_by: viewer`, and the run is in their
 `mine()`) — attribution that would otherwise be lost by omission.
-`viewer(...)` raises `no_viewer` when there is nobody to act for. **The
+`viewer(...)` raises `no_viewer` when the request carries no act-for header.
+**An anonymous visitor to a public app carries one that names nobody**, so
+`viewer(headers)` accepts it and the start is refused by the platform, 403
+`viewer_anonymous`, with a hint to start it as the app — catch that, or read the
+caller's role (`anonymous`) first and call `toft.jobs` instead. **The
 platform adds no role gate to a viewer's start**: declaring the job is what
 authorized the app to start it, and whether this person may press the button is
 the app's own rule — `who()` or the caller's role, below.
@@ -657,7 +682,9 @@ as the run; the calls it may make are the run's own, and a job reaching for the
 app's credential is a design question rather than a missing variable. The one
 exceptions are sending and storage: a job may notify through its app's
 integrations and reach the stores its app maps, and every other app call is
-refused with `job_send_only`.
+refused with `job_send_only`: the sentence names the job and the run and says it
+is not a broken deploy, and the `hint` names the two ways round — the service
+process, or `run.write_output_json(...)` read back by an endpoint.
 
 ## Once it is deployed
 
@@ -665,6 +692,10 @@ refused with `job_send_only`.
 and `toft status` says what is serving — `--json` carries the app's URL, which is
 the install's own answer and so is right whether or not deployed apps get an
 origin of their own there.
+
+Run them with `TOFT_PLAIN=1` exported: through a pty `toft` cannot tell an agent
+from a person, and would draw for one and ask it questions. Set, every command
+answers as it does piped. The `toft-cli` skill says what else it changes.
 
 A newly created app is private — an *anonymous* request to its URL answering
 `authentication required` is the app working, not a failed deploy. You can still

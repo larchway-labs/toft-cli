@@ -42,7 +42,7 @@ plain folder deploys.
 |---|---|
 | `toft login [url]` | Sign in to an install. `--status` says who and where, `--forget` drops a stored credential (`--forget-all` every one), `--token-stdin` for CI, `--password-stdin` to store the built-in administrator's session beside the key — used by any command run with `--session` |
 | `toft link <app>` | Record which app this directory deploys to. `--local` keeps it out of git |
-| `toft deploy [dir]` | Bundle and upload. `--logs` interleaves the build log, `--json` for scripts, `--verify <path>` checks the app answers once it is live, `--dry-run` is `toft check` |
+| `toft deploy [dir]` | Bundle and upload. `--logs` interleaves the build log, `--json` for scripts, `--verify <path>` checks the app answers once it is live, `--dry-run` is `toft check`. Anything `toft check` would refuse is refused at the upload, before a build |
 | `toft check [dir]` | What a deploy of this directory would decide — what the app is, which language version it gets, each job's timeout and memory and where they came from, what in `toft.toml` is ignored or no longer allowed — without deploying anything |
 | `toft status` | What is serving, since when, and from what |
 | `toft fetch [path]` | Request a page of your deployed app as you, even when it is private. Prints the status and the start of the body; `--anonymous` shows what a stranger sees. A stopped app says so and names `toft start`. It takes a path, not a URL |
@@ -50,18 +50,19 @@ plain folder deploys.
 | `toft deps` | What the dependency policy says about the app. If a deploy was refused, this is the packages, the advisories and the versions that fix it |
 | `toft logs` | The app's log. `--follow`, or `--deploy <id>` for one build's output |
 | `toft rollback [id]` | Back to the previous deployment. Names it before it acts, and the release now serving once it is done |
-| `toft create [dir]` | Make a new app and deploy this directory into it. Tells you the name it will take and asks first. `--repo <url>` to build from a repository instead, and `--subdir <folder>` with it to build one folder of a repository that holds several apps. A slug you named that is taken is refused rather than renamed. `--owner-group <name\|id>` gives the app to a group — required with a deploy key, which belongs to nobody |
+| `toft create [dir]` | Make a new app and deploy this directory into it. Tells you the name it will take and asks first. `--repo <url>` to build from a repository instead, and `--subdir <folder>` with it to build one folder of a repository that holds several apps. A slug you named that is taken is refused rather than renamed, and a directory `toft check` would refuse is refused before the name is claimed, leaving no app behind. `--owner-group <name\|id>` gives the app to a group — required with a deploy key, which belongs to nobody |
 | `toft redeploy` | Build again from the app's own source — its repository, or what was last uploaded. Sends nothing from your disk |
-| `toft restart` / `toft start` | Restart the app, starting it if it is stopped. `--wait` waits until it is up and fails if it never comes up |
+| `toft restart` / `toft start` | Restart the app, starting it if it is stopped (and then it says `started`). `--wait` waits until it is up and fails if it never comes up. A notebook, Quarto or R Markdown app serves the same rendered pages after a restart, and says so: its page changes at the next deploy |
 | `toft stop` | Stop the app |
-| `toft env list\|set\|unset` | The app's environment variables. `set KEY=VALUE`, `--sensitive` to make a value write-only, `--restart` to apply it straight away |
+| `toft env list\|set\|unset` | The app's environment variables. `set KEY=VALUE`, `--sensitive` to make a value write-only, `--restart` to apply it straight away. An empty value keeps a stored sensitive one, and says it was kept |
 | `toft visibility [level]` | Who may open the app: `private`, `authenticated` or `public` |
-| `toft deployments list\|prune\|delete` | The app's deployment history. `prune` deletes all but the one serving. An id can be a unique prefix of six or more characters, here and in `toft logs --deploy` |
+| `toft deployments list\|prune\|delete` | The app's deployment history. `prune` deletes all but the one serving, and names what it kept and why — a release an unfinished job run still needs, say. An id can be a unique prefix of six or more characters, here and in `toft logs --deploy` |
 | `toft delete <app>` | Delete an app and everything it has. The name has to be typed out |
 | `toft events` | What has gone wrong with this app. `--since 2h`, `--severity`, `--kind` |
 | `toft job list\|run\|rerun\|wait\|runs\|logs\|cancel` | Jobs — commands your app declares in `toft.toml`, with or without a schedule — which run in a container where the install has a cluster and on the install's own machine where it does not, each with its own timeout and memory limit. `toft job run` waits for the run and fails if it fails; `--follow` shows its log as it goes. `--param k=v` to pass values (a required one you leave out is asked for), `--for <time>` to name the instant the run is for. Nothing is retried automatically: `toft job rerun <id>` runs one again with the same values, and `toft job wait <id>` waits for a run something else started |
 | `toft task` | Removed: scheduled tasks are now jobs with a `schedule` in `toft.toml`. It says so and exits 2 |
 | `toft apps` | The apps you can see. `--mine` |
+| `toft top` | The apps you can see, kept current on a terminal; `q` to quit |
 | `toft store ls\|cp\|mv\|mkdir\|rm\|put\|get` | Files in an app's durable store. `cp -r` copies whole folders up and down (`toft://<store>/<path>` is the store side), `mv` renames, `mkdir` makes an empty folder, `rm -r` deletes one. Every path prints as `toft://<store>/<path>`, which every subcommand takes back. `get … -o -` writes to stdout |
 | `toft sdk vendor` | The app SDK this install carries, written into your working directory so your editor, `go build` and your CI can see it |
 | `toft skill [name]` | Print the agent skills written for this version of `toft` — `toft-cli` and `toft-sdk` — to drop into a coding agent's skills folder |
@@ -156,6 +157,10 @@ using.
 
 `toft` detects that nothing can answer a prompt — stdin is not a terminal, or `CI`
 is set — and exits rather than hanging on a confirmation nobody can see.
+
+An agent driving `toft` through a pty should `export TOFT_PLAIN=1` (or pass
+`--plain`): a pty looks like a person to every terminal test, and `TOFT_PLAIN`
+makes the run a piped one — plain lines, no colour, no questions.
 
 In a terminal, `toft` draws its output: tables with headers, colored status
 badges, a live view of each deploy and a summary when it finishes. When the
