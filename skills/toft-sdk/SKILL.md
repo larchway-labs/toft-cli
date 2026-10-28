@@ -308,6 +308,14 @@ retryable 4xx is left to your loop, honoring `retry_after` / `retryAfter` /
 so `tryCatch(..., toft_error = function(e) ...)` catches the platform's
 refusals and nothing else; its message is unchanged.
 
+**Every SDK bounds its waits the same way, and follows no redirect.** A call to
+the platform gives up after 30 seconds, a transfer to or from the object store
+(a run's output, a store upload or download) after five minutes. A redirect on
+an ordinary call is refused rather than followed — `unexpected redirect from
+<path>`, with the status (R: `code` `unexpected_redirect`) — so the app's token
+and the act-for blob never reach another host. An id or integration name you
+pass is sent as one path segment, escaped, never as a route of its own.
+
 ### Go reads a little differently, on purpose
 
 | | |
@@ -482,7 +490,9 @@ again five minutes before expiry, so calling it before every request is cheap.
 - `403 <kind>_tokens_off` means the switch is off; `409 token_too_wide` means the
   connection's Entra app holds permissions beyond files, which Toft refuses to
   hand out. Check `toft.app.can("sharepoint.token")` at startup.
-- A token outlives a detach by up to an hour. Never log it.
+- A token outlives a detach by up to an hour. Never log it. No SDK's printed
+  form shows the value — `print`, `repr`, `console.log`, `fmt` — so logging the
+  token object is safe; `token.value` is not.
 - A job may get one too, while its run is in flight.
 
 ### Background work

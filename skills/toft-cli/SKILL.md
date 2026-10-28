@@ -68,7 +68,7 @@ beside the key** — and run those calls with `--session`:
 
 ```bash
 printf '%s' "$TOFT_ADMIN_PASSWORD" | toft login --password-stdin https://toft.corp   # --user admin is the default
-toft api PUT admin/storage/<id>/grants --data '{"subject_type":"user","subject_id":"…","access":"overwrite"}' --session
+toft api PUT admin/storage/<id>/grants --data '{"subject_type":"user","subject_id":"…","access":"full"}' --session
 toft api POST apps/<id>/lock --data '{"message":"…"}' --session   # the field is message; an unknown one is ignored
 toft fetch / --session        # the app sees a signed-in person: who() answers with a name
 ```
@@ -76,8 +76,10 @@ toft fetch / --session        # the app sees a signed-in person: who() answers w
 Everything without `--session` still uses the key. The session lives the
 install's session lifetime (hours, with an idle clock that `toft` keeps renewed
 while you use it); when it ends, `--session` refuses with exit 3 and says to sign
-in again — it never falls back to the key. `toft login --status` shows both. If
-the password form answers that local sign-in is switched off, the install signs
+in again — it never falls back to the key. `toft login --status` shows both. A
+password sign-in that is answered with a redirect is refused (exit 3) rather
+than posted on, and names the address it pointed to — log in at that address if
+it is the install's. If the password form answers that local sign-in is switched off, the install signs
 in through SSO only and the administrator's half needs a person.
 
 **Flags may come before or after the positional argument**, in every command:
@@ -187,7 +189,10 @@ toft rollback --yes               # back to the deployment before the serving on
   one line under the header; a table that already names a slug is refused,
   exit 2 — edit it, or add a per-install entry with `--install`. A slug that
   does not resolve says where it was read (`.toft.toml [app]`), unless you
-  typed it.
+  typed it. When the install itself came from a manifest's `[app] install`,
+  the deploy says so before uploading (`to <url> — the install "prod" is named
+  by toft.toml [app] install`) and does not ask: read a cloned tree's
+  `toft.toml` before deploying from it.
 - **`toft redeploy`** rebuilds from the repository the app names and uploads
   nothing. On an uploaded app it rebuilds from the source last uploaded — what
   you want after an environment change or an interpreter upgrade, without
@@ -286,7 +291,7 @@ Afterwards:
 
 | | |
 |---|---|
-| `toft logs` | the app's runtime log — `--follow` (prints each line once, as it arrives), `--lines` (1 or more; below that is exit 2), `--since 2h`, `--source app\|platform`. `--json` is one object per line: `at`, `source`, `stream`, `line`, and, on an isolated install, a `marker` (`workload_start`) on the one line where the platform's stored account gives way to the workload's own output — a shared install interleaves the two by time and draws no marked boundary. Piped or redirected, the app's own colour codes are removed; a terminal keeps them |
+| `toft logs` | the app's runtime log — `--follow` (prints each line once, as it arrives), `--lines` (1 or more; below that is exit 2), `--since 2h`, `--source app\|platform`. `--json` is one object per line: `at`, `source`, `stream`, `line`, and, on an isolated install, a `marker` (`workload_start`) on the one line where the platform's stored account gives way to the workload's own output — a shared install interleaves the two by time and draws no marked boundary. Piped or redirected, the app's own colour codes are removed; a terminal keeps them and nothing else — titles, links, clipboard writes and cursor moves are always removed |
 | `toft logs --deploy <id>` | one build's log instead, whole — `--lines N` makes it the last N. `--source` and `--since` are refused with it |
 | `toft events` | what the platform noticed going wrong — the command to run after a restart that did not take |
 | `toft status --json` | the app, the serving deployment, the app's URL, and two clocks: `serving_since` (when this release became the live one — a rollback's is recent even when its build is old) and `status_changed_at`. Absent from an older install. The text form prints `status running for 5 minutes`, `since` and `built` as separate lines |
@@ -344,7 +349,10 @@ toft fetch /x/respond --no-follow   # the 303 itself, not where it leads
 **A redirect is followed and said**: each hop is printed before the answer
 (`303 See Other  …/x/respond → …/__toft/runs/<id>`), and `--json` carries
 `redirects` (status, url, location each) and `final_url` beside `url`, the
-address requested. `--no-follow` answers with the redirect itself.
+address requested. `--no-follow` answers with the redirect itself, and so does
+a redirect off the install's apps address, which is never followed: the answer
+is the redirect, its `Location` in `headers`, and no credential or session
+cookie travels to or is taken from the other host.
 
 It resolves the app's address the same way `status` does, sends your key to
 that address only, and exits 1 for an answer that is not 2xx or 3xx. A `..` or
@@ -587,7 +595,9 @@ ships them with the code. Jobs are on by default.
   peak memory, `rerun_of` — and the one command worth typing next. **`toft job
   logs <runID>`** is what the run printed; `--follow` keeps reading until it
   ends. **`toft job output <runID>`** is what it wrote with `write_output` — the
-  bytes, text or JSON, to stdout or `-o <file>` (the SDKs' `run.output()`); a run
+  bytes, text or JSON, to stdout or `-o <file>` (the SDKs' `run.output()`; an
+  existing file is refused without `--force`, and is replaced only once the
+  download is whole); a run
   that wrote none is `no_output`, one whose object is gone `output_expired`. **`toft job cancel <runID>`** stops one; on a run that already finished
   it says `already finished (<status>)`, exit 0, `"changed":false`. A run id may
   be the eight characters `toft job runs` prints.
@@ -761,7 +771,9 @@ Exit codes are the usual contract and are **coarser than the HTTP status**: 2 fo
 a path that matches no route, a 404, a 400 or a 409 `name_taken`; 3 for a
 credential or permission refusal and for any other 409 — the app's state
 refused; 4 when the install could not be reached; and 1 for the rest — a 5xx, a
-422, a 409 that is a wait (`deploy_queued`, `already_running`). Branch on the
+422, a 409 that is a wait (`deploy_queued`, `already_running`). The jobs codes
+outrank their status: `jobs_unavailable` and `run_still_open` are 3, `queue_full`
+is 1, and a refused parameter or job (`param_*`, `no_such_job`) is 2. Branch on the
 body's `code` for the detail; it is the platform's own JSON. A path with no leading slash is read as
 relative to `/api/v1/`; one with a leading slash is sent as written, so `toft api
 GET apps` and `toft api GET /api/v1/apps` are the same call. A path that matches
