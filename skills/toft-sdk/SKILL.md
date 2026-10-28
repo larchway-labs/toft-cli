@@ -294,7 +294,8 @@ A refusal the SDK makes itself, before any request, carries the same fields:
 `mine()` on the app acting as itself, and `viewer(headers)` on a request with
 no act-for header (an API key, a health check, a local server), are both
 `no_viewer`; a `wait()` that would outlive the request being served
-is `would_outlive_request`, hint `return toft.jobs.respond(run)`; an argument
+is `would_outlive_request`, whose hint is that SDK's own respond call (Node's
+`return toft.jobs.respond(run, req)`, Go's `Jobs.Respond(w, r, run)`); an argument
 the SDK rejects locally (an email with no recipient, blank text, an empty send
 or session id, app data that is not an object) is `bad_request`; and
 `write_output` with no location is `no_output` — all `retryable: false`. A
@@ -308,8 +309,10 @@ mounted twice and no folder named — the sentence names the call you made, so
 reached over signed URLs), `insufficient_access`, `already_exists` (an existing
 name at `write`), `not_found` (a download of a name the store does not hold —
 the first night of a nightly job), `not_a_store` and `invalid_name` — every one
-`retryable: false` (in R a `toft_error` condition with `status` NA, 404 for
-`not_found`). Any other status the object store answers is still the language's
+`retryable: false`, each with a `hint` naming the next step (the folder
+argument to pass, `upload()` in place of a mount, a relative name, a new name or
+an administrator to ask) — in R a `toft_error` condition with `status` NA, the
+store's 404 for `not_found` and 412 for `already_exists`. Any other status the object store answers is still the language's
 error type, with `status`, and no code. R's store helpers raise the same
 `toft_error` for their own argument checks — `bad_request` (no mount, no local
 file) — and for a malformed `TOFT_STORAGE`, `storage_env_invalid`. A call that needs a variable the

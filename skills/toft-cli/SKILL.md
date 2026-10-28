@@ -76,7 +76,10 @@ toft fetch / --session        # the app sees a signed-in person: who() answers w
 Everything without `--session` still uses the key. The session lives the
 install's session lifetime (hours, with an idle clock that `toft` keeps renewed
 while you use it); when it ends, `--session` refuses with exit 3 and says to sign
-in again — it never falls back to the key. `toft login --status` shows both. A
+in again — it never falls back to the key. An install also ends a person's
+sessions when their role or groups change, which `toft login --status` cannot
+see: the next `--session` call is a 401 whose hint names
+`toft login --password-stdin <install>`. `toft login --status` shows both. A
 password sign-in that is answered with a redirect is refused (exit 3) rather
 than posted on, and names the address it pointed to — log in at that address if
 it is the install's. If the password form answers that local sign-in is switched off, the install signs
@@ -205,7 +208,9 @@ toft rollback --yes               # back to the deployment before the serving on
   the install's `action`, `start` or `restart`). On a **document** — a notebook,
   Quarto or R Markdown app — a restart serves the same rendered pages again, and
   the answer carries a `note` saying so: a changed variable reaches the page at
-  the next deploy (`toft redeploy`), and a job at its next start; `toft stop` stops it, and says `already stopped` (`"changed": false`
+  the next deploy (`toft redeploy`), and a job at its next start. On a
+  **static** app the `note` says the restart changed nothing: its files are
+  served as they are, and no process reads an environment; `toft stop` stops it, and says `already stopped` (`"changed": false`
   under `--json`) when there was nothing to do.
 - **`toft apps`** lists the apps this credential can see, `--mine` for the ones it
   owns. It is how to find a slug you do not know.
@@ -225,7 +230,9 @@ toft rollback --yes               # back to the deployment before the serving on
   the directory as a new app, behind the same doors a create has, and so does
   `toft deploy --dry-run`. With a deploy key that includes the owner: a check
   of a new app needs `--owner-group <name|id>` as `toft create` does, and
-  without it is the same exit 2 `owner_group_required`, before the upload. Its `--json` `warnings` are sentences, the same a
+  without it is the same exit 2 `owner_group_required`, before the upload. The
+  group named goes with the check, so one the create would refuse (nobody in it
+  could administer the app) is refused by the check. Its `--json` `warnings` are sentences, the same a
   deploy's result carries; `warning_details` gives each a `code`
   (`manifest_unread`) and, for a `toft.toml` key, its `table`. With no
   `[runtime] python`, a `requires-python` that excludes the install's default
@@ -455,7 +462,9 @@ for an empty one — and `"sensitive": true` with no value for a write-only one.
   `restart_needed`. **A document app** (notebook, Quarto, R Markdown) reads its
   environment when it is rendered, so there the change reaches the page at the
   next deploy: `toft env set` says so and `--json` carries `redeploy_needed`
-  instead.
+  instead. **A static app** runs no process, so a variable reaches nothing
+  there: `toft env set` says so, `restart_needed` is false and `--json`
+  carries the sentence as `note`.
 - **`SECRET=` keeps a stored sensitive value** rather than blanking it, and
   `toft env set` says it was *kept* (`kept: [...]` under `--json`), not set;
   `toft env unset SECRET` is what removes it. A command that changed nothing
@@ -698,6 +707,7 @@ toft store ls                              # what you can reach, and at what lev
 toft store ls reports                      # one level: its folders, then its objects
 toft store ls toft://reports/2026-08/      # the level below
 toft store get toft://reports/2026-08/q1.csv   # or: get reports 2026-08/q1.csv
+toft store get reports/2026-08/q1.csv ./out/   # a second word after a path is where it goes
 toft store get toft://reports/2026-08/q1.csv -o -   # to stdout
 ```
 
