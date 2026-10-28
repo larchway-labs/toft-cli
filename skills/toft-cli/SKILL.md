@@ -206,14 +206,17 @@ toft rollback --yes               # back to the deployment before the serving on
   `toft start` is the same call under the name that reads right when it is
   stopped, and prints `started` when the app was not running (`--json` carries
   the install's `action`, `start` or `restart`). On a **document** — a notebook,
-  Quarto or R Markdown app — a restart serves the same rendered pages again, and
-  the answer carries a `note` saying so: a changed variable reaches the page at
+  Quarto or R Markdown app — a restart serves the same rendered pages again, so
+  it prints `served again` (`"restart":"served again"` from `env set --restart
+  --json`) and the answer carries a `note` saying why: a changed variable reaches the page at
   the next deploy (`toft redeploy`), and a job at its next start. On a
-  **static** app the `note` says the restart changed nothing: its files are
+  **static** app it prints `unchanged` and the `note` says the restart changed nothing: its files are
   served as they are, and no process reads an environment; `toft stop` stops it, and says `already stopped` (`"changed": false`
   under `--json`) when there was nothing to do.
-- **`toft apps`** lists the apps this credential can see, `--mine` for the ones it
-  owns. It is how to find a slug you do not know.
+- **`toft apps`** lists the apps this credential can see, `--mine` for the ones that
+  are yours — owned by you or a group you are in, or granted to you, the web
+  console's *Mine* (`--json` carries `mine` and `owner_group_id`). It is how to
+  find a slug you do not know.
 - **`toft top`** is `toft apps` kept current on a person's terminal. Piped, under
   `--json` or `TOFT_PLAIN` it is exactly `toft apps`, so an agent gains nothing
   from it.
