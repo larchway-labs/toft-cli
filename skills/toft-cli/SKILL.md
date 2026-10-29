@@ -211,8 +211,8 @@ toft rollback --yes               # back to the deployment before the serving on
   it prints `served again` (`"restart":"served again"` from `env set --restart
   --json`) and the answer carries a `note` saying why: a changed variable reaches the page at
   the next deploy (`toft redeploy`), and a job at its next start. On a
-  **static** app it prints `unchanged` and the `note` says the restart changed nothing: its files are
-  served as they are, and no process reads an environment; `toft stop` stops it, and says `already stopped` (`"changed": false`
+  **static** app it prints `unchanged` — asleep or awake, there is no process to wake — and the `note` says the restart changed nothing: its files are
+  served as they are, and no process reads an environment. `toft start` of a *stopped* static app prints `started`, with no note, because it is served again; `toft stop` stops it, and says `already stopped` (`"changed": false`
   under `--json`) when there was nothing to do.
 - **`toft apps`** lists the apps this credential can see, `--mine` for the ones that
   are yours — owned by you or a group you are in, or granted to you, the web
