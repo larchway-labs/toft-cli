@@ -172,8 +172,8 @@ replacement in the hint: `retries` (a run is never retried — a person reruns
 it), `viewer_runnable` (the app's own button decides who may start a run) and
 `enabled` (pausing a schedule is done in Toft, until the next deploy). A
 `[tasks]` table is refused the same way. **A job's `memory` and `cpu` are
-refused too** — *an administrator sets a job's limits; remove this key*, at
-`toft check` and at the deploy. A job gets the install's job defaults (1 GB and
+refused too** — `removed_key`, hint *an administrator sets a job's memory, on
+the app's Automation tab*, at `toft check` and at the deploy. A job gets the install's job defaults (1 GB and
 2 cores as shipped) unless an administrator gives that one job an override, and
 an override survives every deploy; the app's own limits do not apply to its
 jobs. **A `timeout` above the install's ceiling is refused** at `toft check` and
@@ -310,8 +310,9 @@ no act-for header (an API key, a health check, a local server), are both
 `no_viewer`; a `wait()` that would outlive the request being served
 is `would_outlive_request`, whose hint is that SDK's own respond call (Node's
 `return toft.jobs.respond(run, req)`, Go's `Jobs.Respond(w, r, run)`); an argument
-the SDK rejects locally (an email with no recipient, blank text, an empty send
-or session id, app data that is not an object) is `bad_request`; and
+the SDK rejects locally (blank text, an empty send or session id, app data that
+is not an object) is `bad_request`; an email with no recipient is
+`no_recipient`, from the SDK or the platform, with a hint; and
 `write_output` with no location is `no_output` — all `retryable: false`. A
 run's `wait()` that runs out is `wait_timeout`, `retryable: true` — the run is
 still going (Python's is also a `TimeoutError`; a cancelled Go context is

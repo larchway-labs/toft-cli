@@ -205,7 +205,8 @@ toft rollback --yes               # back to the deployment before the serving on
 - **`toft restart --wait`** starts a stopped app and fails if it does not come up.
   `toft start` is the same call under the name that reads right when it is
   stopped, and prints `started` when the app was not running (`--json` carries
-  the install's `action`, `start` or `restart`). On a **document** — a notebook,
+  the install's `action`, `start` or `restart`, and `outcome`, the word the line
+  prints — read `outcome`, not `status`, which stays `restarted` for older scripts). On a **document** — a notebook,
   Quarto or R Markdown app — a restart serves the same rendered pages again, so
   it prints `served again` (`"restart":"served again"` from `env set --restart
   --json`) and the answer carries a `note` saying why: a changed variable reaches the page at
@@ -252,8 +253,9 @@ toft rollback --yes               # back to the deployment before the serving on
   since lowered as a `limit_clamped` warning. A declaration above the ceiling,
   or a removed key, is a problem with its `code` (`limit_exceeds_ceiling`,
   `removed_key`) and a `hint` naming the line to write. A job's `memory` or
-  `cpu` key is refused as `manifest_invalid`: *an administrator sets a job's
-  limits; remove this key*.
+  `cpu` key is a removed key too: `removed_key`, hint *an administrator sets a
+  job's memory, on the app's Automation tab; until then it runs at the
+  install's job default*.
   **`toft create` and `toft deploy` refuse at the upload whatever `toft check`
   refuses** — static plus `[jobs]`, a pin the install lacks, a job over the
   ceiling — with check's own code (`manifest_invalid`, `runtime_version`,
@@ -323,7 +325,7 @@ Afterwards:
 | `toft logs` | the app's runtime log — `--follow` (prints each line once, as it arrives), `--lines` (1 or more; below that is exit 2), `--since 2h`, `--source app\|platform`. `--json` is one object per line: `at`, `source`, `stream`, `line`, and, on an isolated install, a `marker` (`workload_start`) on the one line where the platform's stored account gives way to the workload's own output — a shared install interleaves the two by time and draws no marked boundary. Piped or redirected, the app's own colour codes are removed; a terminal keeps them and nothing else — titles, links, clipboard writes and cursor moves are always removed |
 | `toft logs --deploy <id>` | one build's log instead, whole — `--lines N` makes it the last N. `--source` and `--since` are refused with it |
 | `toft events` | what the platform noticed going wrong — the command to run after a restart that did not take |
-| `toft status --json` | the app, the serving deployment, the app's URL, and two clocks: `serving_since` (when this release became the live one — a rollback's is recent even when its build is old) and `status_changed_at`. Absent from an older install. The text form prints `status running for 5 minutes`, `since` and `built` as separate lines |
+| `toft status --json` | the app, the serving deployment, the app's URL, and two clocks: `serving_since` (when this release became the live one — a rollback's is recent even when its build is old) and `status_changed_at`. Absent from an older install. The text form prints `status running for 5 minutes`, `since` and `built` as separate lines. When the newest deploy failed while an older release serves, `latest` names it — its id and `failure_reason` — and the text form prints a `latest … failed — <reason>` line with `toft logs --deploy <id>` |
 | `toft deps --json` | the packages, the advisories, and the versions that fix a refused deploy |
 
 ## When the dependency policy refuses a deploy
@@ -904,7 +906,7 @@ with `toft api`, which is the point of the column on the right:
 | an app that is locked (exit 2) | an administrator, or the install's own dependency policy, has locked it. **Nothing was built**, and retrying will refuse identically until the lock is lifted |
 | a job name that does not resolve (exit 2, `no_such_job`) | a name, not a run — the platform attempted nothing. `toft job list` names what exists; a job not yet in a deployed `toft.toml` does not exist. This is exit **2**, never 1: exit 1 would mean the work ran and failed |
 | `run_still_open` (exit 3) on `toft job rerun` | the run has not finished; `toft job wait <id>` first, or `toft job cancel <id>` |
-| `removed_key` / `limit_exceeds_ceiling` at `toft check` or deploy | a key Toft no longer reads (`retries`, `viewer_runnable`, `enabled`, `[tasks]`), or a `timeout` above the install's ceiling. The hint is the line to write instead. A job's `memory` or `cpu` key is `manifest_invalid`, *an administrator sets a job's limits; remove this key* — delete it, and ask an administrator for an override if the default is too small |
+| `removed_key` / `limit_exceeds_ceiling` at `toft check` or deploy | a key Toft no longer reads (`retries`, `viewer_runnable`, `enabled`, `[tasks]`), or a `timeout` above the install's ceiling. The hint is the line to write instead. A job's `memory` or `cpu` key is `removed_key` too, its hint naming the administrator's override on the app's Automation tab — delete it, and ask an administrator for an override if the default is too small |
 | `background jobs are not available` (exit 2, `code: jobs_unavailable`) | this install cannot run jobs for this app, and the message and the install's hint say why. Configuration, not a bug in the job |
 | `authentication required` from the app's URL | the app is private and the request carried no credential — send your key, per Looking at the app |
 
