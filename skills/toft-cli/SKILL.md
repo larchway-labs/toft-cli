@@ -245,11 +245,15 @@ toft rollback --yes               # back to the deployment before the serving on
   the secret-looking files the bundle carries (`including .env`) as a deploy
   does, and warns when `toft.toml` declares jobs and `toft whoami` says this
   install runs none. **It prints each job's effective limits with their
-  source** — `nightly  timeout 45m (declared) · memory 512 MB (install
-  default)` — and a job whose declared limit an administrator's ceiling has
+  source** — `nightly  timeout 45m (declared) · memory 1024 MB (install
+  default) · cpu 2 cores (install default)` — with a word added where the
+  install cannot hold one (`sampled rather than held by the kernel` for memory,
+  `not enforced on this install` for CPU), and a job whose declared limit an administrator's ceiling has
   since lowered as a `limit_clamped` warning. A declaration above the ceiling,
   or a removed key, is a problem with its `code` (`limit_exceeds_ceiling`,
-  `removed_key`) and a `hint` naming the line to write.
+  `removed_key`) and a `hint` naming the line to write. A job's `memory` or
+  `cpu` key is refused as `manifest_invalid`: *an administrator sets a job's
+  limits; remove this key*.
   **`toft create` and `toft deploy` refuse at the upload whatever `toft check`
   refuses** — static plus `[jobs]`, a pin the install lacks, a job over the
   ceiling — with check's own code (`manifest_invalid`, `runtime_version`,
@@ -612,8 +616,11 @@ not refused — do not put secrets in the tree.
 ## Jobs
 
 A job is a command your app declares in `toft.toml` — `[jobs.<name>]` with a
-`command`, and optionally a `timeout`, `memory`, `schedule`, `params` — run as a
-process of its own from the same release, with its own timeout and memory limit:
+`command`, and optionally a `timeout`, `schedule`, `params` — run as a
+process of its own from the same release, with its own timeout and memory and
+CPU limits. The timeout is yours; memory and CPU are an administrator's — the
+install's job defaults, or an override they set on that one job, which survives
+every deploy. A `memory` or `cpu` key in `toft.toml` is refused. A job runs as
 a container of its own where the install has a cluster, a process on the
 install's own machine where it does not. **`toft.toml` is the only place a job
 is made**; there is no verb that creates, edits or deletes one, and a deploy key
@@ -621,8 +628,12 @@ ships them with the code. Jobs are on by default.
 
 - **`toft job list`** prints each job with its schedule and zone, its
   `expect_within` window, its params (`--param region=<string>  required, one of emea|amer|apac`), its
-  effective limits with their source — `timeout 45m (declared)`, `memory 512 MB
-  (install default)`, `timeout 15m (clamped by admin, declared 45m)` — and
+  effective limits with their source — `timeout 45m (declared)`, `memory 1024 MB
+  (install default)`, `memory 1536 MB (override)`, `cpu 2 cores (install
+  default)`, `timeout 15m (clamped by admin, declared 45m)` — with
+  `sampled rather than held by the kernel` or `not enforced on this install`
+  added where the install cannot hold one (`--json`: each limit's `value`,
+  `source` and `enforcement` — `enforced`, `sampled` or `not_enforced`), and
   where runs go. `toft job run` with no name lists the same jobs with how to
   run each.
 - **`toft job run <name>`** starts a run and waits for it; the run's outcome is
@@ -893,7 +904,7 @@ with `toft api`, which is the point of the column on the right:
 | an app that is locked (exit 2) | an administrator, or the install's own dependency policy, has locked it. **Nothing was built**, and retrying will refuse identically until the lock is lifted |
 | a job name that does not resolve (exit 2, `no_such_job`) | a name, not a run — the platform attempted nothing. `toft job list` names what exists; a job not yet in a deployed `toft.toml` does not exist. This is exit **2**, never 1: exit 1 would mean the work ran and failed |
 | `run_still_open` (exit 3) on `toft job rerun` | the run has not finished; `toft job wait <id>` first, or `toft job cancel <id>` |
-| `removed_key` / `limit_exceeds_ceiling` at `toft check` or deploy | a key Toft no longer reads (`retries`, `viewer_runnable`, `enabled`, `[tasks]`), or a `timeout`/`memory` above the install's ceiling. The hint is the line to write instead |
+| `removed_key` / `limit_exceeds_ceiling` at `toft check` or deploy | a key Toft no longer reads (`retries`, `viewer_runnable`, `enabled`, `[tasks]`), or a `timeout` above the install's ceiling. The hint is the line to write instead. A job's `memory` or `cpu` key is `manifest_invalid`, *an administrator sets a job's limits; remove this key* — delete it, and ask an administrator for an override if the default is too small |
 | `background jobs are not available` (exit 2, `code: jobs_unavailable`) | this install cannot run jobs for this app, and the message and the install's hint say why. Configuration, not a bug in the job |
 | `authentication required` from the app's URL | the app is private and the request carried no credential — send your key, per Looking at the app |
 

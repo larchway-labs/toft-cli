@@ -145,7 +145,6 @@ fallback = true               # client-side routing
 [jobs.nightly-report]
 command  = "python -m reports.nightly"   # or args = [...] — Go's single binary only
 timeout  = "45m"              # a duration, or whole seconds; omitted is the install default
-memory   = 1024               # MB; omitted is the install default
 schedule = "0 3 * * *"        # optional; omit for a job something starts
 timezone = "Europe/London"    # optional; the schedule is UTC without it
 overlap  = "skip"             # skip | queue (the default); only with a schedule
@@ -172,12 +171,18 @@ object included — the declared types are scalars. `--param` sends strings, so
 replacement in the hint: `retries` (a run is never retried — a person reruns
 it), `viewer_runnable` (the app's own button decides who may start a run) and
 `enabled` (pausing a schedule is done in Toft, until the next deploy). A
-`[tasks]` table is refused the same way. **A `timeout` or `memory` above the
-install's ceiling is refused** at `toft check` and at the deploy,
-`limit_exceeds_ceiling`, with the largest value that fits in the hint. `toft
-check` prints each job's effective limits and where each came from —
-`declared`, `install default`, or `clamped` when an administrator lowered the
-ceiling under a job already deployed.
+`[tasks]` table is refused the same way. **A job's `memory` and `cpu` are
+refused too** — *an administrator sets a job's limits; remove this key*, at
+`toft check` and at the deploy. A job gets the install's job defaults (1 GB and
+2 cores as shipped) unless an administrator gives that one job an override, and
+an override survives every deploy; the app's own limits do not apply to its
+jobs. **A `timeout` above the install's ceiling is refused** at `toft check` and
+at the deploy, `limit_exceeds_ceiling`, with the largest value that fits in the
+hint. `toft check` prints each job's effective timeout, memory and CPU and where
+each came from — `declared` (timeout only), `install default`, `override`, or
+`clamped` when an administrator lowered the ceiling under a job already
+deployed — and says so where the install cannot hold a limit: memory *sampled
+rather than held by the kernel*, CPU *not enforced on this install*.
 
 **`overlap = "skip"`** stands a scheduled run down when the previous one is
 still going: it is recorded as a `skipped` run rather than not at all.
@@ -204,7 +209,16 @@ work is its `[jobs]`. Restart and Stop answer `no_service` on one.
 
 **Jobs run without a cluster.** Where the install has one, each run is a
 container of its own; where it does not, a process on the install's own machine,
-with the same timeout, memory limit and record. `toft job list` says which.
+with the same timeout, memory and CPU limits and record. `toft job list` says which.
+
+**A CPU limit is an amount of CPU time, not a set of cores.** An app gets one
+core by default and a job two; a program that runs more threads than that is
+slowed, not stopped. So that thread pools size themselves to the limit, the
+platform sets `GOMAXPROCS`, `OMP_NUM_THREADS` and `MC_CORES` to the limit
+rounded up to whole cores, and `UV_THREADPOOL_SIZE` to that or 4, whichever is
+larger — unless your app's environment sets them. An app held at its limit for
+more than a quarter of an hour raises an `app_cpu_throttled` warning to its
+owners; ask an administrator for a higher limit, or do less at once.
 
 **A job can send.** `toft.notify(...)` (email, Slack, any integration an
 administrator attached to the app) works inside a job, with the run's own
@@ -522,7 +536,7 @@ again five minutes before expiry, so calling it before every request is cheap.
 ### Background work
 
 A job is a different entrypoint of *this same app*, from the same release, with
-its own timeout, memory limit and record. Starting one returns as soon as the run
+its own timeout, memory and CPU limits and record. Starting one returns as soon as the run
 is queued. **A web handler answers the request with `respond(run)` and never
 waits:**
 
