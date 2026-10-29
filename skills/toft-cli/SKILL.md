@@ -443,6 +443,8 @@ toft env set API_TOKEN=… --sensitive   # write-only: never shown again
 toft env unset DEBUG --restart         # --restart applies it now
 toft visibility                        # private | authenticated | public
 toft visibility authenticated
+toft hostname reports.example.com --on # admin only: the app at its own hostname's root
+toft hostname --off                    # back to /apps/<slug>; --clear forgets the name
 toft deployments list                  # newest first, * is serving
 toft deployments prune --yes           # all but the serving one
 toft deployments delete 4f1a2b --yes   # a unique prefix (6+ characters) is enough
@@ -484,6 +486,14 @@ for an empty one — and `"sensitive": true` with no value for a write-only one.
   A credential that may see the names but not the values is refused before
   anything is written (exit 3). A variable an administrator attached through a
   credential cannot be set here, and the refusal names the credential.
+- **`toft hostname`** is an administrator's. Switching a name on or off (or a
+  rename) is a *move*: a deployment `triggered_by: move` rebuilds the code
+  already running at the new address, and the old address keeps serving until
+  it finishes, then redirects (308). `public_url` in `toft hostname --json` and
+  on `GET /apps/{id}` is where the app answers now. A name under the install's
+  own host, or a parent of it, is refused with `code: invalid_hostname`; one
+  another app holds with `hostname_taken`. The name's DNS must already point at
+  the install's apps address.
 - **`toft visibility public`** can be refused by the install (`code:
   "public_apps_disabled"`) or by its license (`not_licensed`); `toft whoami`
   says in advance whether it is allowed.
@@ -886,7 +896,7 @@ with `toft api`, which is the point of the column on the right:
 
 | | |
 |---|---|
-| An app's name, slug, branch, embedding origins or listing | Not in the CLI. `PATCH /api/v1/apps/{id}` with the field, or the Settings page. Environment variables and visibility have verbs: `toft env`, `toft visibility` |
+| An app's name, slug, branch, embedding origins or listing | Not in the CLI. `PATCH /api/v1/apps/{id}` with the field, or the Settings page. Environment variables, visibility and the hostname have verbs: `toft env`, `toft visibility`, `toft hostname` |
 | Creating, editing or deleting a job | Not a call at all: a `[jobs.<name>]` table in `toft.toml`, shipped with `toft deploy`. Pausing a schedule until the next deploy is the app's Automation tab, or `PATCH /api/v1/apps/{id}/jobs/{name}` with `{"enabled": false}` |
 | A notebook's re-render schedule | Not in the CLI, and not a job — it produces a new rendered release rather than running a command. The Automation tab, or `PUT`/`DELETE /api/v1/apps/{id}/render-schedule` |
 | An app's tags | Not in the CLI. `PUT /api/v1/apps/{id}/tags` with the ids of tags that already exist; creating the tags themselves is an administrator's |

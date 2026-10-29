@@ -56,6 +56,7 @@ plain folder deploys.
 | `toft stop` | Stop the app |
 | `toft env list\|set\|unset` | The app's environment variables. `set KEY=VALUE`, `--sensitive` to make a value write-only, `--restart` to apply it straight away. An empty value keeps a stored sensitive one, and says it was kept |
 | `toft visibility [level]` | Who may open the app: `private`, `authenticated` or `public` |
+| `toft hostname [name] [--on\|--off\|--clear]` | An app's own hostname — administrators only; switching rebuilds the app at its new address |
 | `toft deployments list\|prune\|delete` | The app's deployment history. `prune` deletes all but the one serving, and names what it kept and why — a release an unfinished job run still needs, say. An id can be a unique prefix of six or more characters, here and in `toft logs --deploy` |
 | `toft delete <app>` | Delete an app and everything it has. The name has to be typed out |
 | `toft events` | What has gone wrong with this app. `--since 2h`, `--severity`, `--kind` |
