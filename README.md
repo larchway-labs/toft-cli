@@ -34,7 +34,8 @@ toft deploy                                     # pushes what is on your disk
 
 `toft deploy` bundles the working tree — respecting every `.gitignore` in it — and
 uploads it. It does not need a git remote, a commit, or even a repository; a
-plain folder deploys.
+plain folder deploys. A `.env` file never goes with it (`.env.example` does):
+`toft env set --from-file .env` sends its values to the install instead.
 
 ## The commands
 
@@ -54,7 +55,7 @@ plain folder deploys.
 | `toft redeploy` | Build again from the app's own source — its repository, or what was last uploaded. Sends nothing from your disk |
 | `toft restart` / `toft start` | Restart the app, starting it if it is stopped (and then it says `started`). `--wait` waits until it is up and fails if it never comes up. A notebook, Quarto or R Markdown app serves the same rendered pages after a restart, and says so: its page changes at the next deploy |
 | `toft stop` | Stop the app |
-| `toft env list\|set\|unset` | The app's environment variables. `set KEY=VALUE`, `--sensitive` to make a value write-only, `--restart` to apply it straight away. An empty value keeps a stored sensitive one, and says it was kept |
+| `toft env list\|set\|unset` | The app's environment variables. `set KEY=VALUE`, or `--from-file .env` (`-` reads stdin) to send a whole dotenv file. A new variable is visible unless you pass `--sensitive`, which makes every value write-only. `--only-missing` fills only variables that are empty, and `KEY=` clears one. `toft restart` applies a change. A secret `toft.toml` declares but nobody has set lists as `not set` |
 | `toft visibility [level]` | Who may open the app: `private`, `authenticated` or `public` |
 | `toft hostname [name] [--on\|--off\|--clear]` | An app's own hostname — administrators only; switching rebuilds the app at its new address |
 | `toft deployments list\|prune\|delete` | The app's deployment history. `prune` deletes all but the one serving, and names what it kept and why — a release an unfinished job run still needs, say. An id can be a unique prefix of six or more characters, here and in `toft logs --deploy` |
@@ -140,6 +141,15 @@ toft deploy --no-watch
 A deploy key creates an app only into a group that will own it:
 `toft create --yes --owner-group <name|id>`. Without the flag it is refused,
 exit 2, before anything is uploaded.
+
+The same key can set the app's environment, so a pipeline can rotate a secret
+without anyone's personal credential — values from the runner's secret store
+go in on stdin and never reach the command line:
+
+```bash
+printf 'DB_PASSWORD=%s\n' "$DB_PASSWORD" | toft env set --from-file -
+toft restart --wait
+```
 
 **Give that key full access, not read-only.** A key's scope is chosen when it is
 minted and cannot be widened afterwards — a read-only one is replaced, not

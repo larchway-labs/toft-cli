@@ -26,8 +26,13 @@ as it is. Root-absolute asset URLs (`/styles.css`) ask the *platform*, not you,
 and 404.
 
 Anything else you need — a database URL, an API key — is an environment variable
-someone sets on the app's Settings page. A restart applies it; a redeploy is not
-required. Your process never receives the platform's own secrets.
+someone sets on the app's Settings page or with `toft env set`. A restart
+applies it; a redeploy is not required. Your process never receives the
+platform's own secrets. **Name what the code needs under `[env]` in
+`toft.toml`** (below) so every install it lands on asks for it. **A `.env` file
+is never deployed** and nothing on the install reads one — read the variables
+from the environment; `load_dotenv()` and its peers leave an already-set
+variable alone, so code that calls them locally keeps working.
 
 ## How the build decides what your app is
 
@@ -142,6 +147,12 @@ root     = "dist"             # document root
 entry    = "report.html"      # what the app's URL serves
 fallback = true               # client-side routing
 
+[env]
+DB_HOST     = "db.internal"          # visible, with a default
+API_URL     = {}                     # visible, no default
+LOG_LEVEL   = { default = "info" }   # visible, with a default
+DB_PASSWORD = { sensitive = true }   # a secret: never a default
+
 [jobs.nightly-report]
 command  = "python -m reports.nightly"   # or args = [...] — Go's single binary only
 timeout  = "45m"              # a duration, or whole seconds; omitted is the install default
@@ -157,6 +168,22 @@ default  = "emea"             # or required = true — never both
 help     = "Which region to report on"
 choices  = ["emea", "amer", "apac"]
 ```
+
+**Each key under `[env]` is one variable the code needs, and you decide
+which are secrets.** A string or `{ default = "…" }` is a visible variable with
+that default, `{}` a visible one with none, and `{ sensitive = true }` a
+secret. Each deploy adds any variable the app lacks, with its default and its
+flag; it never changes or removes a variable that exists, and a name a
+credential already supplies is skipped. A secret reads *not set* until somebody
+fills it in on the Settings page or with `toft env set`; an unfilled variable
+reaches the process as an empty string. **A secret never has a default** —
+`sensitive_default`, with the hint `toft env set --from-file`: its value
+belongs to the install, not the repository. Any other shape (a number, a
+`sensitive` that is not true or false, a `default` that is not a string, an
+unknown key) is `env_entry_invalid`; a name that is not letters, digits and
+underscores is `invalid_env_name`, and one the platform sets itself, such as
+`PORT`, `HOST` or `BASE_PATH`, is `reserved_env_name` — at `toft check` and at
+the deploy alike.
 
 A job declared here versions with the code it runs, and a rollback takes the
 command back with it. **Declared parameters are enforced when a run starts**:

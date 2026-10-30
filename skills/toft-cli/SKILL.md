@@ -208,8 +208,7 @@ toft rollback --yes               # back to the deployment before the serving on
   the install's `action`, `start` or `restart`, and `outcome`, the word the line
   prints — read `outcome`, not `status`, which stays `restarted` for older scripts). On a **document** — a notebook,
   Quarto or R Markdown app — a restart serves the same rendered pages again, so
-  it prints `served again` (`"restart":"served again"` from `env set --restart
-  --json`) and the answer carries a `note` saying why: a changed variable reaches the page at
+  it prints `served again` and the answer carries a `note` saying why: a changed variable reaches the page at
   the next deploy (`toft redeploy`), and a job at its next start. On a
   **static** app it prints `unchanged` — asleep or awake, there is no process to wake — and the `note` says the restart changed nothing: its files are
   served as they are, and no process reads an environment. `toft start` of a *stopped* static app prints `started`, with no note, because it is served again; `toft stop` stops it, and says `already stopped` (`"changed": false`
@@ -224,7 +223,9 @@ toft rollback --yes               # back to the deployment before the serving on
   from it.
 - **`toft check`** (or `toft deploy --dry-run`) sends the bundle `toft deploy`
   would send and the install answers with the decisions a deploy makes before
-  it builds: what the app is, the interpreter it would get, the jobs and the
+  it builds: what the app is, the interpreter it would get, the jobs, the
+  `[restart]` and `[render]` schedules (a `restart` and a `re-render` line with
+  the zone and the first firing; `restart` and `render` in `--json`), the
   `toft.toml` tables nothing reads, and what unpacking removed. Nothing is
   deployed or recorded. Exit 1 when a deploy would be refused, and each
   problem carries the same `reason` key a failed deploy would. It does **not**
@@ -243,8 +244,9 @@ toft rollback --yes               # back to the deployment before the serving on
   `[runtime] python`, a `requires-python` that excludes the install's default
   Python picks the newest one it allows (`runtime.requires_python` says so), and
   one nothing satisfies is refused as `runtime_version`. It names
-  the secret-looking files the bundle carries (`including .env`) as a deploy
-  does, and warns when `toft.toml` declares jobs and `toft whoami` says this
+  the secret-looking files the bundle carries (`including server.key`) and the
+  `.env` it leaves behind (`not uploading .env`) as a deploy does, and warns
+  when `toft.toml` declares jobs and `toft whoami` says this
   install runs none. **It prints each job's effective limits with their
   source** — `nightly  timeout 45m (declared) · memory 1024 MB (install
   default) · cpu 2 cores (install default)` — with a word added where the
@@ -438,9 +440,13 @@ self-contained, scope it with a request interceptor.
 
 ```bash
 toft env list                          # names; values that are not sensitive
-toft env set DATABASE_URL=postgres://… # one or more KEY=VALUE; others are kept
-toft env set API_TOKEN=… --sensitive   # write-only: never shown again
-toft env unset DEBUG --restart         # --restart applies it now
+toft env set API_TOKEN=…               # one or more KEY=VALUE; others are kept
+toft env set API_TOKEN=… --sensitive  # write-only; a new variable is visible
+toft env set --from-file .env          # every line of a dotenv file; - is stdin
+toft env set --from-file .env --only-missing  # fill only empty variables
+toft env set OLD_TOKEN=                # clears it in place
+toft env unset DEBUG                   # removes it
+toft restart                           # a change applies at the next start
 toft visibility                        # private | authenticated | public
 toft visibility authenticated
 toft hostname reports.example.com --on # admin only: the app at its own hostname's root
@@ -452,7 +458,9 @@ toft delete my-app --yes               # the slug typed out; no undo
 ```
 
 Under `--json`: `env list` rows carry `value` whenever it was shown — `""`
-for an empty one — and `"sensitive": true` with no value for a write-only one.
+for an empty one — and `"sensitive": true` with no value for a write-only one;
+a write-only one holding nothing adds `"unset": true`, and prints as `KEY  not
+set`.
 `deployments list` is the install's answer, except that
 `step_timings` is an object rather than a string holding one.
 
@@ -464,28 +472,52 @@ for an empty one — and `"sensitive": true` with no value for a write-only one.
   when it succeeds, in the summary and as `deployment_id` under `--json`. The
   row the platform watches the switch through is deleted on success.
 
-- **Flags can go before or after the variables**: `toft env set A=1 --restart`
-  is the same command as `toft env set --restart A=1`.
+- **Flags can go before or after the variables**: `toft env set A=1 --visible`
+  is the same command as `toft env set --visible A=1`.
+- **A new variable is visible** unless you pass `--sensitive`. Without
+  `--sensitive` or `--visible` an existing variable keeps its flag; with
+  either, every variable the command sets takes it. A write-only value cannot
+  be made visible without sending its value again (`--visible` with the new
+  value).
+- **`--from-file FILE`** reads `KEY=VALUE` lines from a dotenv file, or stdin
+  with `-` — the way to keep a secret off the command line. `KEY=VALUE`
+  operands on the same command win over the file. A malformed line is exit 2
+  (`invalid_env_file`) naming the line, before anything is sent.
+  **`--only-missing`** fills only variables that are empty — secret or not —
+  and reports the ones holding a value as *kept*: the way to fill a new
+  install without overwriting what an operator tuned. A file mixing secrets
+  and settings is two calls: the settings plain, the secrets with
+  `--sensitive`.
 - **A name is letters, digits and underscores, not starting with a digit**, and
   `PORT`, `HOST` and `BASE_PATH` are the platform's to set. Both are exit 2
   before anything is sent (`invalid_env_name`, `reserved_env_name`).
 - **An environment change applies at the next start**, not the next deploy:
-  `toft restart`, or `--restart` on the same command. The document says
-  `restart_needed`. **A document app** (notebook, Quarto, R Markdown) reads its
+  `toft restart`. **A document app** (notebook, Quarto, R Markdown) reads its
   environment when it is rendered, so there the change reaches the page at the
   next deploy: `toft env set` says so and `--json` carries `redeploy_needed`
   instead. **A static app** runs no process, so a variable reaches nothing
-  there: `toft env set` says so, `restart_needed` is false and `--json`
-  carries the sentence as `note`.
-- **`SECRET=` keeps a stored sensitive value** rather than blanking it, and
-  `toft env set` says it was *kept* (`kept: [...]` under `--json`), not set;
-  `toft env unset SECRET` is what removes it. A command that changed nothing
-  says `nothing changed` and promises no restart.
-- **`toft env set` keeps every other variable**, sensitive ones included — the
-  route replaces the whole map, and the command writes back what it read.
-  A credential that may see the names but not the values is refused before
-  anything is written (exit 3). A variable an administrator attached through a
-  credential cannot be set here, and the refusal names the credential.
+  there: `toft env set` says so and `--json` carries the sentence as `note`.
+- **`SECRET=` clears the value in place** and says *cleared* (`cleared:
+  [...]` under `--json`); the variable stays, reading `not set`. `toft env
+  unset SECRET` removes it. A command that changed nothing says `nothing
+  changed` and promises no restart.
+- **`toft env set` touches only the variables it names**, and reads nothing
+  first: every other variable is left as it is, and a value it did not send is
+  never seen. One call either lands every variable or none. A variable an
+  administrator attached through a credential cannot be set here, and the
+  refusal names the credential. A deploy key may set and unset variables, so a
+  pipeline can rotate a secret with the key it deploys with; a read-only key
+  may not (exit 3).
+- **`[env]` in `toft.toml` declares the variables the app needs, one key
+  each**: `DB_HOST = "db.internal"` or `{ default = "…" }` is visible with a
+  default, `{}` visible with none, `DB_PASSWORD = { sensitive = true }` a
+  secret. Each deploy adds any that are missing with the file's default and
+  flag; it never changes or removes one that exists. A secret with no value
+  lists as `not set`. A secret with a default is refused
+  (`sensitive_default`), any other malformed entry is `env_entry_invalid`, and
+  a bad or reserved name is `invalid_env_name` / `reserved_env_name` — by
+  `toft check` too. Secrets go to each install with `toft env set
+  --from-file`.
 - **`toft hostname`** is an administrator's. Switching a name on or off (or a
   rename) is a *move*: a deployment `triggered_by: move` rebuilds the code
   already running at the new address, and the old address keeps serving until
@@ -622,8 +654,14 @@ does) and ship `renv.lock` alone; the install restores from the lockfile against
 its own binary repository, and a library built on your machine would be compiled
 against your distribution rather than the install's.
 
-A bundled `.env`, `*.pem`, `id_rsa*` or `*.key` gets one dimmed warning and is
-not refused — do not put secrets in the tree.
+**`.env` and `.env.*` never go**, whatever `.gitignore` or a `!` in
+`.toftignore` says — `.env.example` and `.env.sample` do, being templates. A
+skipped one gets a dimmed line, `not uploading .env — toft env set --from-file
+.env sends its values`; the install never reads one, so the app gets those
+values from its environment instead (`load_dotenv()` and its peers leave an
+already-set variable alone, so the code does not change). A bundled `*.pem`,
+`id_rsa*` or `*.key` gets one dimmed warning and is not refused — do not put
+secrets in the tree.
 
 ## Jobs
 
@@ -704,6 +742,36 @@ which a static deploy refuses. **While an app is locked** `toft job list` shows
 each schedule as `held by the app's lock — no firing runs until it is lifted`
 instead of a next firing; `--json` carries `held_by_lock: true` and no
 `next_run_at`.
+
+### Scheduled restarts and re-renders
+
+An app's other two schedules live in `toft.toml` beside its jobs, one of each
+per app and neither named:
+
+```toml
+[restart]                    # a serving app: bounce it nightly
+schedule = "0 4 * * *"
+timezone = "Europe/London"   # optional; absent is UTC
+
+[render]                     # a document: render it again as a new release
+schedule = "0 6 * * 1"
+```
+
+**The file is the only writer** — there is no verb or API that sets either, and
+removing the table removes the schedule at the next deploy (announced as a
+deploy warning and a `schedule_removed` app event; a re-render's recipient list
+goes with it). Pausing until the next deploy is the app's Settings tab, or
+`PATCH /api/v1/apps/{id}/restart-schedule` (or `/render-schedule`) with
+`{"enabled": false}`. `toft check` and the deploy refuse, each with its `code`:
+`[restart]` on a batch app (`restart_no_service`), on a static app or a
+document (`restart_changes_nothing` — a document wants `[render]`), `[render]`
+on anything but a notebook, Quarto or R Markdown (`render_not_a_document`),
+either firing less than an hour apart (`schedule_too_frequent`), and
+`enabled` in either (`removed_key`). **A scheduled restart restarts a running
+app and nothing else**: asleep, stopped, crashed, locked or mid-deploy it is
+skipped, and the Settings tab says why. It is audited as `app.restart` by the
+system with `via: schedule`. On shared mode visitors see *not responding* for
+the app's start time at each one.
 
 **`toft task` is gone.** Scheduled tasks were replaced by jobs: it refuses with
 `removed_command` (exit 2) and names the replacement — a `[jobs.<name>]` with a
@@ -898,7 +966,7 @@ with `toft api`, which is the point of the column on the right:
 |---|---|
 | An app's name, slug, branch, embedding origins or listing | Not in the CLI. `PATCH /api/v1/apps/{id}` with the field, or the Settings page. Environment variables, visibility and the hostname have verbs: `toft env`, `toft visibility`, `toft hostname` |
 | Creating, editing or deleting a job | Not a call at all: a `[jobs.<name>]` table in `toft.toml`, shipped with `toft deploy`. Pausing a schedule until the next deploy is the app's Automation tab, or `PATCH /api/v1/apps/{id}/jobs/{name}` with `{"enabled": false}` |
-| A notebook's re-render schedule | Not in the CLI, and not a job — it produces a new rendered release rather than running a command. The Automation tab, or `PUT`/`DELETE /api/v1/apps/{id}/render-schedule` |
+| A document's re-render or an app's scheduled restart | Not a call: `[render]` or `[restart]` in `toft.toml`, shipped with `toft deploy`. Pausing until the next deploy is the Settings tab, or `PATCH /api/v1/apps/{id}/render-schedule` (`restart-schedule`) with `{"enabled": false}`; a report's recipients are `PUT /api/v1/apps/{id}/render-schedule/recipients` |
 | An app's tags | Not in the CLI. `PUT /api/v1/apps/{id}/tags` with the ids of tags that already exist; creating the tags themselves is an administrator's |
 | Grants, storage mappings, integrations | Administrator surfaces, in the UI or the API |
 | Publishing from RStudio | Not `toft`'s: RStudio's *Add account* takes the install's address as a Posit Connect server, signs in through the same approval page as `toft login`, and publishes with rsconnect. Its routes are under `/__api__`; an agent deploys with `toft` |
