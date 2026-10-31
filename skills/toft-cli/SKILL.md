@@ -549,7 +549,7 @@ A contract, and the reason a failed run can be triaged without reading the log:
 |---|---|
 | 0 | it worked |
 | 1 | the platform did the thing and it failed — a failed build, a refused scan, a failed job run — and a wait that ran out (`--timeout`, `--wait-timeout`): the work is still going on the platform, and the message names the command that follows it |
-| 2 | usage or configuration — no app linked, a bad flag, an argument nothing reads, jobs not available on this install, a confirmation nothing could answer, **an app that is locked**, **a name that does not resolve** (an unknown deployment id — `deploy --watch` and `deployments delete` too — store, job or run), a param a job refuses, or a command that was removed (`removed_command`, `toft task`) |
+| 2 | usage or configuration — no app linked, a bad flag, an argument nothing reads, jobs not available on this install, a confirmation nothing could answer, **an app that is locked**, **a name that does not resolve** (an unknown deployment id — `deploy --watch` and `deployments delete` too — store, job or run), a param a job refuses, or a command or flag that was removed (`removed_command`, `toft task`; `removed_flag`, `toft env set --restart`) |
 | 3 | not authenticated, or refused — no credential, a revoked or expired key, uploads switched off, a license limit, or **the app's state refusing**: a rerun of a run still going (`run_still_open`), the serving deployment (`deployment_protected`) |
 | 4 | the install did not answer |
 
