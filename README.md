@@ -66,6 +66,7 @@ plain folder deploys. A `.env` file never goes with it (`.env.example` does):
 | `toft apps` | The apps you can see. `--mine` |
 | `toft top` | The apps you can see, kept current on a terminal (`--mine` for yours); `q` to quit |
 | `toft store ls\|cp\|mv\|mkdir\|rm\|put\|get` | Files in an app's durable store. `cp -r` copies whole folders up and down (`toft://<store>/<path>` is the store side), `mv` renames, `mkdir` makes an empty folder, `rm -r` deletes one. Every path prints as `toft://<store>/<path>`, which every subcommand takes back. `get … -o -` writes to stdout |
+| `toft storage ls [--app <slug>]` | The storage you can attach and your ceiling on each, or with `--app` what that app has attached and whether `toft.toml` or the console attached it. An app asks for storage with a `[[storage]]` entry in `toft.toml`; `toft check` prints the plan |
 | `toft sdk vendor` | The app SDK this install carries, written into your working directory so your editor, `go build` and your CI can see it |
 | `toft skill [name]` | Print the agent skills written for this version of `toft` — `toft-cli` and `toft-sdk` — to drop into a coding agent's skills folder |
 | `toft api <method> <path>` | Call this install's HTTP API with the credential `toft` already holds — the way round a verb `toft` does not have, without putting the key in a shell variable. `--data` takes JSON, `@file` or `@-`. A path with no leading slash is read as relative to `/api/v1/`, so `toft api GET apps` and `toft api GET /api/v1/apps` are the same call |

@@ -153,6 +153,12 @@ API_URL     = {}                     # visible, no default
 LOG_LEVEL   = { default = "info" }   # visible, with a default
 DB_PASSWORD = { sensitive = true }   # a secret: never a default
 
+[[storage]]                   # storage an administrator created, attached by name
+name   = "sales-data"
+access = "read"               # read (default), write or full
+folder = "2026"               # optional: one folder of the resource
+path   = "/data/sales"        # optional: default /storage/<name>[/<folder>]
+
 [jobs.nightly-report]
 command  = "python -m reports.nightly"   # or args = [...] — Go's single binary only
 timeout  = "45m"              # a duration, or whole seconds; omitted is the install default
@@ -168,6 +174,16 @@ default  = "emea"             # or required = true — never both
 help     = "Which region to report on"
 choices  = ["emea", "amer", "apac"]
 ```
+
+**`[[storage]]` attaches storage an administrator has already created**, and
+the app reads it by name — `toft.storage("sales-data")`, `toft.store(…)` —
+never by path. The app's owner must be able to attach each entry, and whoever
+deploys must be able to when the deploy adds one or raises its level; `toft
+check` prints the plan and `toft storage ls` lists what you can attach. The
+mounts change at the end of the deploy, so a new store is not reachable by
+signed URL until the deploy that adds it has finished — do not mint a URL for a
+newly declared store at boot. Removing the entry detaches it at the next
+deploy and keeps its files.
 
 **Each key under `[env]` is one variable the code needs, and you decide
 which are secrets.** A string or `{ default = "…" }` is a visible variable with
@@ -445,7 +461,7 @@ every-minute schedule picks a new mapping up within the minute.
 |---|---|
 | `toft.scratch_dir("uploads")` / `toft.scratchDir` / `toft.ScratchDir` | ephemeral, per app, **wiped on every start, restart and redeploy** |
 | `toft.session_scratch_dir(id)` / `toft.sessionScratchDir` / `toft.SessionScratchDir` | one browser session's corner of it. The id is hashed, so a traversing value cannot escape; an empty one is refused |
-| `toft.storage("reports").path` / `toft.Storage(…).Path` | a durable volume an administrator mapped to this app, resolved by name |
+| `toft.storage("reports").path` / `toft.Storage(…).Path` | a durable volume attached to this app — by a `[[storage]]` entry or by an administrator — resolved by name |
 | `toft.store("reports").put(path)` / `toft.Store(…).Put(path, name)` | a file into an object store **that is mounted here** |
 | `toft.store("reports").upload(path)` · `download(name)` · `url(name)` · `remove(name)` · `list(path)` | the same store over the platform's signed URLs — in both modes, mounted or not, **where the install has a store signer**: without one every call is `store_uploads_off` (404), and a mounted store is still readable at its path |
 | `toft.mounts()` / `toft.Mounts()` | everything mapped, with `read_only` / `readOnly` / `ReadOnly()` |

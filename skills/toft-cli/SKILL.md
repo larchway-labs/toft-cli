@@ -310,6 +310,8 @@ that reason — so in most cases you do not need a second command:
 | `source_blocked` | The install refuses that repository, URL or branch. Not fixable by pushing; ask an administrator |
 | `unsupported_framework` | Nothing in the tree the platform knows how to serve |
 | `manifest_invalid` | `toft.toml` was read and rejected. A one-file fix, and the message says which |
+| `storage_refused` | `toft.toml`'s `[[storage]]` was refused — the message lists every entry and why (`storage_unknown`, `storage_not_attachable_by_owner`, `storage_requires_person`, …). Often a permission an administrator grants rather than an edit; see *Storage declared in `toft.toml`* |
+| `storage_revoked_during_deploy` | A delegation the deploy relied on was revoked while it ran. The new release was healthy and was retired; the old one is still serving. Deploy again once it is restored |
 | `runtime_version` | The language version you declared is not available on this install |
 | `source_unavailable` | The clone, the credential, or a pruned rollback target — the code could not be fetched |
 | `disk_full` | The install's disk is too full to take another release. Not your app; ask an administrator to free or grow it |
@@ -781,6 +783,43 @@ deploy with `removed_key` and the replacement in the hint. Pausing a job's
 schedule until the next deploy is done in Toft (or `PATCH
 /api/v1/apps/{id}/jobs/{name}` with `{"enabled": false}`), not in `toft.toml`.
 
+## Storage declared in `toft.toml`
+
+An app asks for storage an administrator has already created, in its repo:
+
+```toml
+[[storage]]
+name   = "sales-data"
+access = "read"            # read (default), write or full
+folder = "2026"            # optional: one folder of the resource
+path   = "/data/sales"     # optional: default /storage/<name>[/<folder>]
+```
+
+- **The app's owner holds every entry.** The owner has to be able to attach
+  each resource at that level — a group-owned app through the group's *own*
+  delegation, not its members'. **Whoever deploys is checked only on a
+  change**: an entry the app does not have yet, or a higher level. A deploy with
+  no person behind it (auto-deploy, a re-render) can keep and remove storage but
+  not add it; a deploy key adds only if an administrator let that key attach
+  storage, and even then on the owner's right.
+- **`toft storage ls`** lists what you can attach and your ceiling on each;
+  **`toft storage ls --app <slug>`** lists what the app has, with `toft.toml` or
+  `console` beside each. Both pass the install's JSON through under `--json`.
+- **`toft check` prints the plan** under `storage`, in the deploy log's marks:
+  `+` added, `~` changed (with what it was), `-` detached (files kept), `=`
+  kept — including `= name, kept: attached in the console` for a mapping an
+  administrator attached that the toml declares identically, which the toml
+  never takes over. Its refusals are `problems` with reason `storage_refused`
+  and the code.
+- **The mounts change at the end of the deploy, never during it.** A crash
+  restart or a job run during the build still gets the old storage. A store
+  newly declared is not reachable by signed URL from the new release until the
+  deploy finishes — an app that mints a URL for it at boot fails its first
+  deploy's readiness.
+- **Removing an entry detaches the storage at the next deploy**; the files
+  stay. A mapping declared in `toft.toml` cannot be edited in the console — edit
+  the entry and deploy.
+
 ## Files: `toft store`
 
 `toft store ls|cp|mv|mkdir|rm|put|get` moves files in and out of an app's durable store from
@@ -968,7 +1007,7 @@ with `toft api`, which is the point of the column on the right:
 | Creating, editing or deleting a job | Not a call at all: a `[jobs.<name>]` table in `toft.toml`, shipped with `toft deploy`. Pausing a schedule until the next deploy is the app's Automation tab, or `PATCH /api/v1/apps/{id}/jobs/{name}` with `{"enabled": false}` |
 | A document's re-render or an app's scheduled restart | Not a call: `[render]` or `[restart]` in `toft.toml`, shipped with `toft deploy`. Pausing until the next deploy is the Settings tab, or `PATCH /api/v1/apps/{id}/render-schedule` (`restart-schedule`) with `{"enabled": false}`; a report's recipients are `PUT /api/v1/apps/{id}/render-schedule/recipients` |
 | An app's tags | Not in the CLI. `PUT /api/v1/apps/{id}/tags` with the ids of tags that already exist; creating the tags themselves is an administrator's |
-| Grants, storage mappings, integrations | Administrator surfaces, in the UI or the API |
+| Grants, storage resources, delegations, storage mappings made in the console, integrations | Administrator surfaces, in the UI or the API. Attaching storage an administrator created is a `[[storage]]` entry in `toft.toml` (*Storage declared in `toft.toml`*) |
 | Publishing from RStudio | Not `toft`'s: RStudio's *Add account* takes the install's address as a Posit Connect server, signs in through the same approval page as `toft login`, and publishes with rsconnect. Its routes are under `/__api__`; an agent deploys with `toft` |
 
 ## When something refuses
