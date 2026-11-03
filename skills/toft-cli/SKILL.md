@@ -41,7 +41,8 @@ above works; a binary fetched by browser must be cleared by Gatekeeper first.
 ## Signing in
 
 `toft login <url>` alone opens a device flow that waits for a human — the wrong
-door for an agent. Use a key:
+door for an agent, and an unattended run (`TOFT_PLAIN`, `CI`, stdin not a
+terminal) refuses it, exit 2 `unattended_login`, rather than wait. Use a key:
 
 - a personal API key, `toftu_` (a person mints it under **Your account →
   Credentials**), or
@@ -139,7 +140,12 @@ refusal — run it once before the first deploy. `--json` is the install's
 - **Every usage refusal carries a `code`** under `--json`: `unknown_command`
   (also when `--json` comes anywhere on the line), `no_command` (a bare `toft
   --json`), `unknown_flag`, `bad_flag` (a flag written wrong, a switch given a
-  separate value), `unexpected_argument` (a stray word).
+  separate value), `unexpected_argument` (a stray word, or two apps named),
+  `missing_argument` (a required word absent), `conflicting_flags`,
+  `confirmation_required` (unattended, no `--yes`), `cancelled` (answered no),
+  `file_exists` (a download onto a file, without `--force`), `invalid_source`
+  (`logs --source`), `invalid_url`, `unreadable_file`, `empty_input` (nothing on
+  stdin). An install that does not answer is exit 4, code `unreachable`.
 
 ## The loop
 
@@ -252,7 +258,11 @@ hint.
   new app, behind the same doors — including `--owner-group` with a deploy key
   (and a group the create would refuse is refused here).
 - `--json` `warnings` are sentences; `warning_details` gives each a `code`
-  (e.g. `manifest_unread`) and, for a `toft.toml` key, its `table`.
+  (e.g. `manifest_unread`) and, for a `toft.toml` key, its `table`. A skipped
+  `.env` (`env_file_skipped`) and a secret-looking file that ships
+  (`secret_in_bundle`) are among them, each with its `path`.
+- A `toft.toml` that does not parse is a check problem too — `reason:
+  manifest_invalid`, `code: manifest_syntax`, the line in the message — exit 1.
 - Python: with no `[runtime] python`, a `requires-python` excluding the
   install's default picks the newest version it allows
   (`runtime.requires_python`); none satisfying it is `runtime_version`. A
@@ -385,8 +395,12 @@ toft fetch /x/respond --no-follow   # the 303 itself
   --app <slug>`), `batch` (it runs jobs and serves no pages — `toft job list`),
   `building`, `deploy_failed`, `locked`, `crashed`, `sleeping`, `waking`…;
   `retryable` is true for the states that pass on their own (`building`,
-  `restarting`, `waking`, `unavailable`, `moving`). Under `--json` the result
-  document names it `platform_page` and the refusal document follows it.
+  `restarting`, `waking`, `unavailable`, `moving`). Two more answers are the
+  platform's, not the app's: `sign_in_required` (the gateway's 401 to a request
+  with no credential — `--anonymous` on an app that is not public) and
+  `run_page` (a run status page under `/__toft/` that names no run). Under
+  `--json` the result document names it `platform_page` and the refusal
+  document follows it.
 
 From anything else, the apps gateway takes the key as a bearer token, authorizes
 as it would a browser, and strips it before the app sees the request:
@@ -479,7 +493,7 @@ toft delete my-app --yes               # the slug typed out; no undo
   advance.
 - **Deployment ids** take a unique prefix of 6+ characters everywhere
   (`deployments delete`, `logs --deploy`, `rollback <id>`); none or several is
-  exit 2 `not_found` / `ambiguous_id`.
+  exit 2 `not_found` / `ambiguous_id`, and `invalid_id` for one under 6.
 - **`toft rollback`** names the release it restored (`deployment_id` under
   `--json`, on the result and on every progress frame; the platform's own
   short-lived rollback row is `watched_id` on those frames).
@@ -595,7 +609,8 @@ the hint naming the replacement. **`toft task` is gone** (exit 2
 `removed_command`): use a `[jobs.<name>]` with a `schedule`.
 
 - **`toft job list`** — each job's schedule and zone, `expect_within`, params
-  (`--param region=<string>  required, one of emea|amer|apac`), effective
+  (`--param region=<string>  required, one of emea|amer|apac`; `--json`:
+  `params`, `{}` when none), effective
   limits with source (`declared`, `install default`, `override`, `clamped by
   admin, declared 45m`) and enforcement (`--json`: `value`, `source`,
   `enforcement` = `enforced|sampled|not_enforced`). While the app is locked a
@@ -635,8 +650,10 @@ the hint naming the replacement. **`toft task` is gone** (exit 2
 **A run ends in one of six words, on the last line**: `succeeded` (exit 0);
 `failed`, `timed_out`, `out_of_memory`, `cancelled`, `skipped` (exit 1, with the
 reason and the log tail). `skipped` is a scheduled run that never started —
-`overlap = "skip"` and the previous run still going, or the app's queue full
-(`job_schedule_skipped` in `toft events`). Under `overlap = "queue"` a firing
+`overlap = "skip"` and the previous run still going (the policy working: the
+run's reason says so, and no event is recorded), or the app's queue full
+(that one also records `job_schedule_skipped` in `toft events`, a warning the
+job's next success resolves). Under `overlap = "queue"` a firing
 waits behind the previous scheduled run; a run you start never does.
 
 Refusals: `queue_full` exit 1 (retryable); `no_such_job`, `param_type`,
@@ -665,7 +682,9 @@ schedule = "0 6 * * 1"
 Removing a table removes the schedule at the next deploy (a deploy warning and a
 `schedule_removed` event; a re-render's recipients go with it). Pause until the
 next deploy on the Settings tab, or `PATCH /api/v1/apps/{id}/restart-schedule`
-(or `/render-schedule`) with `{"enabled": false}`; a report's recipients are
+(or `/render-schedule`) with `{"enabled": false}` — their `GET` answers
+`schedule` in the stored form, `CRON_TZ=Europe/London 0 4 * * *` when a
+`timezone` is declared, as a job's schedule is; a report's recipients are
 `PUT /api/v1/apps/{id}/render-schedule/recipients`. Refusals (check and deploy):
 `restart_no_service` (batch app), `restart_changes_nothing` (static or document
 — a document wants `[render]`), `render_not_a_document`,
