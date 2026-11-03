@@ -799,7 +799,10 @@ host); on host storage the install carries the bytes. Same commands either way.
 Inside the app and its jobs, attached storage is in `TOFT_STORAGE` (JSON: name,
 kind, access, folder, path; absent when none). Read the path from there or the
 SDK's `mounts()`: on a cluster it is `/storage/<name>` by default, but without
-a cluster it is a folder under the app's own directory.
+a cluster it is a folder under the app's own directory —
+`…/apps/<app-id>/storage/storage/<name>[/<folder>]`, the resource's folder inside
+the app's `storage/` (the doubled `storage` is expected). Never build the path
+yourself; read it.
 
 **Every path prints as `toft://<store>/<path>`** (folders end in `/`), and every
 subcommand takes that form back. `<store>/<path>` works too — for `cp`/`mv`
