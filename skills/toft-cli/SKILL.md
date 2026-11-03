@@ -145,7 +145,13 @@ refusal — run it once before the first deploy. `--json` is the install's
   `confirmation_required` (unattended, no `--yes`), `cancelled` (answered no),
   `file_exists` (a download onto a file, without `--force`), `invalid_source`
   (`logs --source`), `invalid_url`, `unreadable_file`, `empty_input` (nothing on
-  stdin). An install that does not answer is exit 4, code `unreachable`.
+  stdin), `invalid_duration` (`--since`, `--timeout`, `--within`…),
+  `invalid_time`, `invalid_param` (a `--param` not written `k=v`),
+  `invalid_json` / `invalid_method` (`toft api`), `no_credential` (`login
+  --forget` of an install with none stored), `nothing_to_rebuild` (`redeploy`
+  of an app made from an upload), `sdk_language_unknown`, `unknown_skill`,
+  `invalid_slug`. An install that does not answer is exit 4, code
+  `unreachable`.
 
 ## The loop
 
@@ -179,7 +185,8 @@ object, `.app.id`.)
   `my-app/` is exit 2 `no_such_directory`. `--app my-app` sets the slug.
 - A slug you name (`--app` or `toft.toml`) that is taken: exit 2 `name_taken` —
   if it is yours, `toft link <slug>` and `toft deploy`. Longer than 54
-  characters: exit 2 `slug_too_long`. A slug derived from a folder name is
+  characters: exit 2 `slug_too_long`. Not a slug (capitals, `_`, dots): exit 2
+  `invalid_slug`, naming the slug it would be. A slug derived from a folder name is
   instead renamed (`-2`) or cut to 54, and says so.
 - `--repo <url>` creates from a repository (bundles nothing); `--subdir
   <folder>` builds one folder of it and defaults the slug to the folder name. A
@@ -199,11 +206,12 @@ object, `.app.id`.)
 ### `toft deploy`
 
 Bundles the working directory as it is — uncommitted edits included; no git
-needed. Never creates an app: no link is exit 2 naming `toft link <slug>`.
+needed. Never creates an app: no link is exit 2 `no_app`, naming `toft link
+<slug>`.
 
 - `toft link <slug>` writes the slug into `toft.toml` (`--local` writes
   `.toft.toml`). Into an `[app]` table that already names a slug it refuses
-  (exit 2) — edit it, or add a per-install entry with `--install`.
+  (exit 2 `app_already_named`) — edit it, or add a per-install entry with `--install`.
 - **If `toft.toml [app] install` names the install**, deploy says so before
   uploading and does not ask: read a cloned tree's `toft.toml` before deploying
   from it.
@@ -325,7 +333,7 @@ the code `toft check` names), and the detail for that reason:
 | `storage_refused` | `[[storage]]` refused; the message lists each entry and its code. Often a grant an administrator makes, not an edit — see Storage |
 | `storage_revoked_during_deploy` | A delegation was revoked mid-deploy; the new release was retired, the old one still serves. Deploy again once restored |
 | `runtime_version` | The declared language version is not on this install |
-| `source_unavailable` | Clone, credential, or a pruned rollback target — the code could not be fetched |
+| `source_unavailable` | Clone or credential — the code could not be fetched |
 | `disk_full` | The install's disk is full. Ask an administrator |
 | `internal_error` | The platform. Retry, then report |
 
@@ -334,7 +342,7 @@ fall back to `phase` and `step`.
 
 | Afterwards | |
 |---|---|
-| `toft logs` | runtime log. `--follow`, `--lines N` (≥1, else exit 2 `invalid_lines`), `--since 2h`, `--source app\|platform`. `--json`: one object per line — `at`, `source`, `stream`, `line`, and on an isolated install `marker: "workload_start"` where the platform's lines give way to the workload's. Piped, the app's colour codes are stripped |
+| `toft logs` | runtime log. `--follow`, `--lines N` (≥1, else exit 2 `invalid_lines`), `--since 2h`, `--source app\|platform`. `--json`: one object per line — `at`, `source`, `stream`, `line`, and on an isolated install `marker: "workload_start"` where the platform's lines give way to the workload's. Piped, the app's colour codes are stripped; under `--json` `line` is the text without them and `raw` the line as recorded (only when it had any). `toft job logs --json` is the same, one line per document |
 | `toft logs --deploy <id>` | one build's whole log; `--lines N` for the tail. Not combinable with `--source`/`--since` |
 | `toft events` | what the platform noticed (`--kind`, `--severity`, `--since`) — run it after a restart that did not take. `--severity` is `error`, `warning` or `info`; `--kind` is the install's own name (`app_crashed`, `job_run_failed`, `releases_pruned`, `deploy_failed`…, not `crash`) — anything else is exit 2 `invalid_kind` / `invalid_severity` listing the valid ones |
 | `toft status --json` | the app, serving deployment, `url`, `serving_since` (when this release went live — recent after a rollback), `status_changed_at`, `lock` (null when none). When the newest deploy failed while an older release serves, `latest` names it with `failure_reason` |
@@ -379,6 +387,8 @@ toft fetch /api/items --method POST --data @item.json --header 'Content-Type: ap
 toft fetch / --anonymous        # what a stranger sees
 toft fetch /healthz --expect 200
 toft fetch /x/respond --no-follow   # the 303 itself
+toft fetch /export.xlsx -o export.xlsx           # the whole body to a file, only on 2xx/3xx
+toft fetch /load --form kind=frs --form file=@frs.csv   # multipart; implies POST
 ```
 
 - Exit 1 for an answer not 2xx/3xx. Takes a path, never a URL; `..`/`.`
@@ -398,9 +408,11 @@ toft fetch /x/respond --no-follow   # the 303 itself
   `restarting`, `waking`, `unavailable`, `moving`). Two more answers are the
   platform's, not the app's: `sign_in_required` (the gateway's 401 to a request
   with no credential — `--anonymous` on an app that is not public) and
-  `run_page` (a run status page under `/__toft/` that names no run). Under
-  `--json` the result document names it `platform_page` and the refusal
-  document follows it.
+  `run_page` (the gateway's **404** for `/__toft/runs/<id>` naming no run you
+  may see). A run page that exists is printed like any page, with
+  `platform_page: "run_page"` under `--json`; `/__toft/runs/` with no id is
+  the app's own path. Under `--json` the result document names it
+  `platform_page` and the refusal document follows it.
 
 From anything else, the apps gateway takes the key as a bearer token, authorizes
 as it would a browser, and strips it before the app sees the request:
@@ -501,10 +513,15 @@ toft delete my-app --yes               # the slug typed out; no undo
   **3 versions, the serving one included** — so two to roll back to. The owner
   changes the number ("Deployments to keep", `releases_kept` on `PATCH
   /api/v1/apps/{id}`) or turns cleanup off (`auto_delete_releases`); an
-  administrator may cap it (`max_versions_per_app`). Each deploy that retires
+  administrator may cap it (`max_versions_per_app`). The app's read carries
+  both: `releases_kept` is what the owner stored (`0` = never set), and
+  `effective_releases_kept` is what a deploy keeps. Each deploy that retires
   older versions records a silent `releases_pruned` event naming them — `toft
   events --kind releases_pruned` answers "where did that version go".
-- **A pruned deployment is no longer a rollback target.** The serving release, a
+- **A pruned deployment is no longer a rollback target**: `toft rollback <its
+  id>` is exit 2 `not_found` (the row is gone), and exit 1 `gone` when the row
+  stands but its release files do not. `toft rollback` with nothing older to
+  go to is exit 2 `nothing_older`. The serving release, a
   running build, a rollback's source and a release pinned by an unfinished job
   run are never deleted; `prune` prints `kept <id6>: <reason> — <remedy>`
   (`kept: [{id, reason, remedy}]` beside `deleted`). Deleting the serving one is
@@ -562,14 +579,16 @@ result object writes one:
   the result document is the answer and the exit code says it failed. The
   exceptions are a fetch the platform answered in the app's place (the result,
   then a refusal coded with the state) and an unsuccessful `toft job run` (the
-  run, then a refusal coded with how it ended).
+  run, then a refusal coded with how it ended) — each refusal's `hint` is the
+  next command (`toft start`, `toft job logs <id>`, `toft job rerun <id>`).
 - Client-side codes include `manifest_invalid` (toml does not parse),
   `no_such_directory`, `env_not_set`, `owner_group_required`, the credential
   codes above, `not_signed_in` / `no_install` (no credential for that install),
   `no_session` / `session_expired` (`--session` with none, or one that ended),
   the usage codes under Command-line rules, `invalid_visibility`,
   `invalid_kind` / `invalid_severity` (`toft events`), `wait_timeout` (a job
-  wait that ran out, retryable), `timeout` (`fetch --timeout`, retryable), and
+  wait that ran out, retryable), `timeout` (`fetch --timeout`, retryable),
+  `interrupted` (a signal while stdin was read — nothing was sent, exit 1), and
   for `toft store`: `already_exists`, `insufficient_access`, `is_a_folder`,
   `no_store`, `conflicting_flags`.
 
@@ -618,7 +637,9 @@ the hint naming the replacement. **`toft task` is gone** (exit 2
   `next_run_at`). `toft job run` with no name lists the same. Under `--json` a
   scheduled job's `schedule` is the bare expression with `timezone` beside it
   (`UTC` when undeclared), and `expect_within_sec` / `expect_within` (`"26h"`)
-  are on every row, `null` when undeclared.
+  are on every row, `null` when undeclared; `paused` (the schedule switched
+  off in the UI until the next deploy) and `params_spec` (the same as
+  `params`, the install's own name) too.
 - **`toft job run <name>`** starts a run and waits; **the run's outcome is the
   exit code**. With `--json`, an unsuccessful run prints the run document *then*
   the refusal (two lines, exit 1; `code` is the ending). `--follow` streams the
@@ -721,13 +742,20 @@ path   = "/data/sales"     # optional: default /storage/<name>[/<folder>]
   not it exists), `storage_not_attachable_by_owner`,
   `storage_not_attachable_by_you`, `storage_level_above_ceiling`,
   `storage_requires_person`, `storage_conflicts_console_mapping` (attached in the
-  console differently — match it, or have it detached), `storage_path_taken`,
-  `storage_entry_invalid`, ….
+  console differently — match it, or have it detached), …. An entry wrong on
+  its own — no `name`, an `access` off read/write/full, a bad `path`, one
+  resource twice, two entries at one path — is a `manifest_invalid` problem
+  instead, with code `storage_entry_invalid`, `storage_name_ambiguous` or
+  `storage_path_taken` and a `storage[i].<key>` field.
 - **A `toft store` grant is not an attach right.** Holding a grant lets you move
   files with `toft store`; attaching the resource to an app needs a *manage
   delegation* from an administrator, to you or to the app's owner. A
   `[[storage]]` entry naming a resource you hold only a grant on is
   `storage_not_attachable_by_you`, and the message says what to ask for.
+  **Nor is being an administrator**: an admin with no delegation gets the same
+  code, with the two ways through — delegate to yourself or the owner, or attach
+  it from the admin side (`toft api PUT admin/storage/<id>/mappings/<app-id>`)
+  and leave it out of `toft.toml`.
 - **Mounts change at the end of the deploy**, never during it; a store newly
   declared is not reachable by signed URL until the deploy finishes (an app
   minting one at boot fails its first deploy's readiness).
@@ -737,13 +765,24 @@ path   = "/data/sales"     # optional: default /storage/<name>[/<folder>]
 
 ## Files: `toft store`
 
-`toft store ls|cp|mv|mkdir|rm|put|get` moves files in and out of a durable store
-you hold a grant on. On a bucket the transfer goes **direct to the object
-store** (an unreachable bucket is exit 4 naming that host); on host storage the
-install carries the bytes. Same commands either way.
+`toft store ls|cp|mv|mkdir|rm|put|get` moves files in and out of storage you
+hold a grant on — **an object store, or a volume on an install without a
+cluster** (a folder on the Toft host; on a cluster, S3 Files volumes too). This
+is how you load a dataset onto a volume before the app runs; no upload endpoint
+in the app is needed. Only an EFS or Azure Files volume on a cluster is out of
+reach: nothing but a pod mounting it can read it. On a bucket the transfer goes
+**direct to the object store** (an unreachable bucket is exit 4 naming that
+host); on host storage the install carries the bytes. Same commands either way.
+
+Inside the app and its jobs, attached storage is in `TOFT_STORAGE` (JSON: name,
+kind, access, folder, path; absent when none). Read the path from there or the
+SDK's `mounts()`: on a cluster it is `/storage/<name>` by default, but without
+a cluster it is a folder under the app's own directory.
 
 **Every path prints as `toft://<store>/<path>`** (folders end in `/`), and every
-subcommand takes that form back. `<store>/<path>` works too.
+subcommand takes that form back. `<store>/<path>` works too — for `cp`/`mv`
+with `toft://` on neither side, only when nothing in the working directory has
+the store's name (a local folder wins; write `toft://` to mean the store).
 
 ```
 toft store ls                              # what you can reach, and at what level
@@ -827,11 +866,15 @@ cat body.json | toft api POST apps/$ID/job-runs --data @-
   gives `.app.id`).
 - Exits, coarser than HTTP: **2** — no such route (`route_not_found`), wrong
   method (`method_not_allowed`, hint names the right one), 404, 400, 409
-  `name_taken`, `param_*`, `no_such_job`; **3** — credential or permission, any
+  `name_taken`, `param_*`, `no_such_job`, `params_too_large`; **3** — credential or permission, any
   other 409 (state refused), `jobs_unavailable`, `run_still_open`; **4** —
   unreachable; **1** — the rest: 5xx, 422, a 409 that is a wait
   (`deploy_queued`, `already_running`), `queue_full`. Branch on the body's
   `code`.
+- **Finding a route**: `toft api GET admin/openapi.json` (an administrator's
+  key) lists every path and method the install serves, with `x-toft-key-denied`
+  on the ones a key cannot reach (use `--session` for those). It carries no
+  request bodies; the console's own calls are the other reference.
 - **Prefer a verb where one exists** — verbs validate arguments and survive route
   changes.
 
@@ -841,8 +884,9 @@ cat body.json | toft api POST apps/$ID/job-runs --data @-
 |---|---|
 | An app's name, slug, branch, embedding origins or listing | `PATCH /api/v1/apps/{id}` with the field, or the Settings page. Env, visibility and hostname have verbs |
 | Creating, editing or deleting a job, `[render]` or `[restart]` | Not a call: `toft.toml`, shipped with `toft deploy`. Pausing is above |
+| How big the machine is | `toft api GET system/health` (an administrator): `system.memory_total` (bytes) and `system.cpu_count`, on an install without a cluster. A job limit set above them is saved with a `warning` |
 | An app's tags | `PUT /api/v1/apps/{id}/tags` with ids of existing tags; creating tags is an administrator's |
-| Grants, storage resources, delegations, storage mappings made in the console, integrations | Administrator surfaces (UI, or API with `--session`). Attaching existing storage is a `[[storage]]` entry |
+| Grants, storage resources, delegations, storage mappings made in the console, integrations | Administrator surfaces (UI, or API with `--session`). An administrator's key can create storage (`POST admin/storage`, `{"name","kind"}`) and attach it (`PUT admin/storage/<id>/mappings/<app-id>`, `{"path","access","folder"}`); grants, managers and integrations need `--session`. Attaching existing storage is a `[[storage]]` entry |
 | Publishing from RStudio | rsconnect's own surface (`/__api__`, the install posing as Posit Connect); an agent deploys with `toft` |
 
 ## When something refuses
@@ -851,6 +895,7 @@ cat body.json | toft api POST apps/$ID/job-runs --data @-
 |---|---|
 | `no app is linked in this directory` | `toft link <slug>`, or pass `--app` |
 | `that key has expired` (exit 3, `key_expired`) | mint another and `toft login --token-stdin` |
+| `invalid API key` (exit 3, `invalid_key`) | the install does not know this key — revoked, or minted on another install; check `TOFT_TOKEN`, or `toft login` |
 | `key_read_scope` (exit 3) | a read-only key; ask for a full one. Retrying changes nothing |
 | `forbidden` (exit 3, `deny_system_role`) | the account is a **viewer**; publishing needs the publisher role, which only an administrator grants. A **personal** key can ask: an empty `POST /api/v1/me/promotion-requests` (notifies administrators; 409 if one is pending) — then say who must act. A deploy key or service account cannot |
 | `session_required` (exit 3) | an administrator's route; see `--session` |

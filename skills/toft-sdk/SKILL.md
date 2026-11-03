@@ -311,6 +311,8 @@ Branch on the fields, never the sentence:
 
 Go: `toft.AsError(err)`, or `errors.As` to `*toft.QueueFullError` (`InFlight`,
 `Limit`) / `*toft.VersionConflictError`. R: `tryCatch(…, toft_error = function(e) …)`.
+R: a request that never got an answer is a `toft_error` too (`code` `""`,
+`retryable` TRUE), not curl's own condition.
 `retryable` falls back to 429/5xx only when the platform said nothing. Log the
 `hint`. The SDK retries once only for a request that never reached a handler; a
 retryable 4xx is yours to loop on, honoring `retry_after` / `retryAfter` /
@@ -319,18 +321,21 @@ retryable 4xx is yours to loop on, honoring `retry_after` / `retryAfter` /
 **A refusal the SDK makes itself is always coded and never retryable** — a bad
 argument, a missing local file, a call off the platform. Only a request that
 failed in transport, never reaching the platform, is uncoded and retryable, so
-an agent's retry loop cannot spin on a local mistake.
+an agent's retry loop cannot spin on a local mistake. An **object store** that
+answers a signed URL with an error is coded too — `output_unwritable` (writing
+a run's output), `output_unreadable` (reading it back), `store_refused` (any
+`store` call) — with its `status`, and retryable only for a 429 or 5xx.
 
 Codes worth handling (all `retryable: false` unless noted):
 
 | Area | Codes |
 |---|---|
-| raised by the SDK before any request | `bad_request` — an argument it will not send: blank text, an empty session id or job name, a `jobs.list` status that is not one of the eight run statuses (Node exports them as `RUN_STATUSES`, named and on the default `toft`), a `limit` out of range (Python and Node 1–200; Go and R non-negative), `progress` outside 0–100, `app.can("")`, `access_token("")`, a non-JSON body (NaN included), app data that is not an object (R: anything but a named list), a scratch path outside the scratch root, an unreadable local file. `not_found` — a local file that is not there. `off_platform` — the platform's variables are absent, or a run handle made outside a job. Also `no_viewer`, `would_outlive_request`, `no_recipient`, `no_output` (a write with no output location), `storage_env_invalid` (a malformed `TOFT_STORAGE`), `not_json` (`output_json()` / `outputJson()` / `OutputJSON` / `job_output(json = TRUE)` on bytes that are not JSON; no output at all is `None`/`null`/`false`/`NULL`); Go adds `write_failed`, `scratch_unavailable`, `entropy_unavailable` |
-| jobs | `queue_full` (429, **retryable**, `retry_after`), `wait_timeout` (**retryable**; the run is still going; Go's cancelled ctx is `wait_cancelled`), `viewer_anonymous` (403), `act_for_required` (403: cancelling a run a person started that has not finished — only that person may; a finished one answers as a no-op), `job_send_only`, `param_*`, `idempotency_key_reused` (409: the same key with a different job, params or `scheduled_for`), `params_too_large` (413, `limit_bytes` 65536) |
+| raised by the SDK before any request | `bad_request` — an argument it will not send: blank text, an empty session id or job name, a `jobs.list` status that is not one of the eight run statuses (Node exports them as `RUN_STATUSES`, named and on the default `toft`), a `limit` out of range (Python and Node 1–200; Go and R non-negative), `progress` outside 0–100, `app.can("")`, `access_token("")`, a non-JSON body (NaN included), app data that is not an object (R: anything but a named list), a scratch path outside the scratch root, an unreadable local file. `not_found` — a local file that is not there. `off_platform` — the platform's variables are absent, or a run handle made outside a job. Also `no_viewer`, `would_outlive_request`, `no_recipient`, `no_output` (a write with no output location), `storage_env_invalid` (a malformed `TOFT_STORAGE`), `not_json` (`output_json()` / `outputJson()` / `OutputJSON` / `job_output(json = TRUE)` on bytes that are not JSON, an output written empty included, in all four; no output at all is `None`/`null`/`false`/`NULL`). A role word that is not one — `at_least("superuser")`, `caller_can(h, "")` — is `bad_request` (Go: `AtLeast` panics with that `*toft.Error`, having only a bool to return); `system`, `app` and `unknown` are roles and answer false. Node: a negative or NaN `rateLimitTimeout`; `RUN_STATUSES` and `TERMINAL_STATUSES` are read-only (`add` throws). Go adds `write_failed` (a local disk write), `scratch_unavailable`, `entropy_unavailable` |
+| jobs | `queue_full` (429, **retryable**, `retry_after`), `wait_timeout` (**retryable**; the run is still going; Go's cancelled ctx is `wait_cancelled`), `viewer_anonymous` (403), `act_for_required` (403: cancelling a run a person started that has not finished — only that person may; a finished one answers as a no-op), `job_send_only`, `param_*`, `idempotency_key_reused` (409: the same key with a different job, params or `scheduled_for`), `params_too_large` (413; the body's `limit_bytes`, 65536 — Python `e.body["limit_bytes"]`, Node `err.body.limit_bytes`, Go `e.Body["limit_bytes"]` (a `float64`), R `e$body$limit_bytes`) |
 | storage | `not_mapped`, `ambiguous_mount`, `not_mounted`, `insufficient_access`, `already_exists`, `not_found`, `not_a_store`, `invalid_name`, `store_uploads_off` (404) |
-| identity / data | `viewer_identity_disabled`, `version_conflict`, `rate_limited` (**retryable**) |
-| integrations and tokens | `<kind>_off` (403: no connection, e.g. `sharepoint_off`, `slack_off`), `<kind>_not_attached`, `<kind>_disabled`, `<kind>_tokens_off` (403), `unknown_capability` (400: a token kind the install does not offer), `token_too_wide` (409) |
-| notify | `no_recipient`, `bad_recipient` (400: an address the platform will not send to), `too_many_recipients`, `unknown_kind` (400: `notify.send` of a kind that is not one — notify's own code, tokens say `unknown_capability`) |
+| identity / data | `viewer_identity_disabled`, `version_conflict`, `rate_limited` (**retryable**), `too_large` (413: a document over 256 KiB; the body's `limit` is 262144) |
+| integrations and tokens | `<kind>_off` (403: no connection, e.g. `sharepoint_off`, `slack_off`), `<kind>_not_attached` (403, e.g. `email_not_attached`, `slack_not_attached`), `<kind>_disabled`, `<kind>_tokens_off` (403), `unknown_capability` (400: a token kind the install does not offer), `token_too_wide` (409) |
+| notify | `no_recipient`, `bad_recipient` (400: an address the platform will not send to), `too_many_recipients`, `too_large` (413: a message or attachment over the limit), `destination_not_allowed` (400: a `channel`, folder or other destination field — the app's owners choose it on the Integrations tab), `sender_not_allowed` (400: `from`, `reply_to` or headers on an email), `unknown_kind` (400: `notify.send` of a kind that is not one — notify's own code, tokens say `unknown_capability`) |
 | redirects | `unexpected_redirect` (R; others say `unexpected redirect from <path>`) |
 
 Every call gives up after 30 s (object-store transfers after 5 min) and follows
@@ -382,6 +387,12 @@ R `caller_role(headers)`, `caller_can(headers, "editor")`, `viewer(headers)`.
   (a schedule firing), `app` — or `unknown` (missing, unverifiable or expired),
   which passes no `at_least`. The assertion lasts two minutes: in Streamlit,
   read it once at the top of the script.
+- **`is_person` means the caller is on the person ladder** (`anonymous`,
+  `viewer`, `editor`, `owner`), not that a human is there. An anonymous visitor
+  is `is_person` true and `signed_in` false; a schedule firing (`system`), the
+  app itself (`app`) and `unknown` are false for both. `signed_in` is above
+  `anonymous` on that ladder — a machine client's account granted `viewer`
+  reads true. (R has `caller_role()` and `caller_can()` only.)
 - **`who`** answers `None` for an anonymous visitor, an API key, or a request
   with no act-for header at all (a health check, a job). It raises
   only `viewer_identity_disabled` — a signed-in viewer on an app whose
@@ -433,8 +444,10 @@ language, for every operation (Go: each method of the zero `Mount` that
 platform's own `store_not_mapped` is reported as `not_mapped`). The fix is a
 mapping on the app's Storage tab by an administrator, or a `[[storage]]` entry
 in `toft.toml` from someone who may attach it — the SDK's sentence names only
-the first. Node's `storage()` and `store()` off-platform raise `off_platform`
-instead.
+the first. Off the platform (none of `TOFT_API_URL`, `TOFT_APP_ID`,
+`TOFT_RUN_ID`, `TOFT_SCRATCH_DIR` set, and no `TOFT_STORAGE`) `storage()` and
+`store()` raise `off_platform` instead, in all four; set `TOFT_STORAGE` to stand
+a mount in locally.
 
 R: `scratch_dir()` takes no argument and is not storage. A `mounts()` entry is a
 list whose `$path` is `""` for a signed-URL store, so `file.path(m$path, "x")`
@@ -502,8 +515,9 @@ The app never names a channel, folder, sender or reply-to (those fields are
 refused); the administrator's attachment decides. A send returns once accepted
 and recorded; delivery happens after, and the record (`status`) is what a
 workflow may rely on. Email needs a `to` (`no_recipient`), a subject and `text`
-even with `html`; a `to` that is not an address or a list of them (`None`
-included) is `bad_request`.
+even with `html`; a `to` that is not a string or a list of strings (`None`
+included) is `bad_request` before any request, and a string that is not an
+address reaches the platform and is `bad_recipient` (400).
 
 ### Calling Graph or Drive directly
 
@@ -590,14 +604,17 @@ A run carries `id`, `job`, `status` (`queued`, `running`, `succeeded`, `failed`,
 `timed_out`, `out_of_memory`, `cancelled`, `skipped`), `started_by` (`app`,
 `viewer`, `cli`, `schedule`, `ui`), `rerun_of`, `params`, `scheduled_for`,
 `deadline`, `progress`, `progress_message`, `queue_position`, `exit_code`,
-`failure_reason` in words, `peak_memory_mb`, `status_url`, `deduplicated`
-(always present on a start's answer, true or false); `done` is any status but
-queued/running.
+`failure_reason` in words, `peak_memory_mb`, `status_url`, `logs_url`
+(`/api/v1/app/job-runs/<id>/logs`), `deduplicated` (always present on a start's
+answer, true or false, and in `respond()`'s 202 body); `done` is any status but
+queued/running. `rerun_of`, `scheduled_for` and `failure_reason` are null when
+empty — present, in all four (R `NULL`, its run a list with `$done` too).
 
 - **`output()` is `None` / `null` / `nil` when the run wrote nothing** (R
   `NULL`); empty bytes mean it wrote an empty output. A 404 for any other reason
   (no such run) raises. `output_json()` / `outputJson()` / `OutputJSON` answer
-  `None` / `null` / `false` for no output.
+  `None` / `null` / `false` for no output, and raise `not_json` for an output
+  written empty — empty bytes are not JSON.
 - `job_cancel()` in R and `cancel()` in Node return the run read again after
   the cancel; Python and Go return nothing.
 - **A repeated SDK start is the same run**: a start from the app (`toft.jobs`
@@ -643,7 +660,9 @@ tell which entrypoint it is in.
   named. `None` otherwise, never *now*: a rerun of Tuesday processes Tuesday.
   Check `rerun_of` before repeating a side effect. R carries the zone as a
   whole-hour offset (`Etc/GMT+5`); a half-hour offset formats in UTC, with the
-  sent text in `attr(x, "text")`.
+  sent text in `attr(x, "text")`. Node's `toft.run.scheduledFor` is a `Date`,
+  which holds no zone (`+05:30` prints as `Z`); `scheduledForText` is the sent
+  text, offset included. A `JobRun`'s `scheduledFor` is that text.
 - `log` is a print the runner ships to the run's log, flushed so a killed run
   keeps its last lines. **Order is kept within a stream, not across them**: the
   runner reads stdout and stderr as two pipes, so an `error=True` line can land
