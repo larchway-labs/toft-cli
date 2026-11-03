@@ -14,10 +14,14 @@ env, logs, jobs) is the **toft-cli** skill.
 
 | | |
 |---|---|
-| `PORT` | listen on it, never a port you chose |
+| `PORT` | listen on it, never a port you chose. A service's only — a job run gets no `PORT` or `HOST` |
 | `HOST` | bind it. `app.listen(port)` alone binds `0.0.0.0`, reachable around the platform |
-| `BASE_PATH` | where you are mounted, e.g. `/apps/reports`. Always set |
+| `BASE_PATH` | where you are mounted, e.g. `/apps/reports`. Always set, in jobs too |
 
+- **The gateway strips `BASE_PATH` before the request reaches you**: route on
+  `/summary`, not `/apps/reports/summary`. Next.js, Streamlit and marimo are the
+  exception — the platform tells them their mount point and forwards the full
+  path, which they expect.
 - **Links, form actions and asset URLs carry `BASE_PATH`.** A root-absolute
   `/styles.css` asks the *platform*, not you, and 404s.
 - **Redirects need not.** The proxy prefixes a root-relative `Location: /done`
@@ -32,8 +36,9 @@ env, logs, jobs) is the **toft-cli** skill.
 
 | Who gets it | Variables |
 |---|---|
-| every workload | `PORT`, `HOST`, `BASE_PATH`; `TOFT_SCRATCH_DIR` and `TMPDIR` (scratch); `TOFT_API_URL`, `TOFT_APP_SLUG`, `TOFT_STORAGE` (JSON list of mounts); `VIRTUAL_ENV` / `R_LIBS_SITE` |
-| the service only | `TOFT_APP_TOKEN`, `TOFT_APP_ID`, `TOFT_ROLE_KEY` |
+| every workload | `BASE_PATH`; `TOFT_SCRATCH_DIR` and `TMPDIR` (scratch); `TOFT_API_URL`, `TOFT_APP_SLUG`; `VIRTUAL_ENV` / `R_LIBS_SITE` |
+| a workload with storage mapped | `TOFT_STORAGE` (JSON list of mounts) — **absent, not `[]`, when nothing is mapped**; read it through `mounts()` |
+| the service only | `PORT`, `HOST`, `TOFT_APP_TOKEN`, `TOFT_APP_ID`, `TOFT_ROLE_KEY` |
 | a job run only | `TOFT_RUN_ID`, `TOFT_JOB_NAME`, `TOFT_TRIGGER`, `TOFT_TRIGGER_ROLE`, `TOFT_PARAMS`, `TOFT_PARAM_<NAME>`, `TOFT_SCHEDULED_FOR`, `TOFT_RERUN_OF`, `TOFT_DEADLINE`, `TOFT_JOB_TOKEN`, `TOFT_OUTPUT_URI` |
 | defaults your own value overrides | `NODE_ENV=production` (Node/Next.js); `GOMAXPROCS`, `OMP_NUM_THREADS`, `MC_CORES` = CPU limit rounded up to whole cores, `UV_THREADPOOL_SIZE` = that or 4 |
 
@@ -57,13 +62,15 @@ First match wins:
 | 8 | marimo | one root `.py` that imports marimo and builds a `marimo.App` — run per viewer, not rendered |
 | 9 | notebook | one root `.ipynb`, or a `.qmd` that is not R — rendered at build time |
 | 10 | Shiny | `app.R`; `ui.R` **and** `server.R`; or `server.R` + `www/index.html` (`.r` works too) |
-| 11 | plumber | `plumber.R`, or a root `.R` file with `#*` annotations |
+| 11 | plumber | `plumber.R`, or a root `.R` file with a route annotation — `#* @get /x` (any of `@get`, `@post`, `@put`, `@delete`, `@head`, `@options`, `@patch`, `@use`; `#'` works too). A bare `#*` line is not one: such a tree is `unsupported_framework` |
 | 12 | Flask / FastAPI / Streamlit / Python | `requirements.txt`, `pyproject.toml` or `Pipfile` (framework read from it) **plus** a root `app.py`, `main.py`, `streamlit_app.py`, `server.py` or `wsgi.py` — no entry file, no deploy |
 | 13 | static | only with none of `package.json`, `requirements.txt`, `pyproject.toml`, `Pipfile`, `go.mod`, and an HTML entry |
 
 Documents (rows 7, 9) are rendered **once, at build time** and served as files:
 no process behind the page, whatever a chunk prints is published, and a re-render
-is a deploy (or a `[render]` schedule). Several root candidates are refused,
+is a deploy (or a `[render]` schedule). The render is a build step, not a
+workload, so an SDK call from a chunk or cell answers `off_platform` — put
+platform work in a job. Several root candidates are refused,
 named; pick one with `[notebook] file = "reports/weekly.qmd"` (also reaches a
 subdirectory). `[notebook] engine` is `nbconvert`, `quarto`, `knitr` or `jupyter`.
 
@@ -71,6 +78,7 @@ Build traps:
 
 - **Never set `NODE_ENV=production` as an app variable.** It reaches the build,
   npm reads it as `--omit=dev`, and the build fails (`vite: command not found`).
+  `toft env set` warns when you do; the platform already sets it for the process.
 - **Install scripts do not run** (`--ignore-scripts`): `prisma generate`, a
   native rebuild, anything in `postinstall` belongs in your `build` script.
 - **npm only.** A committed `package-lock.json` means `npm ci` and must be in
@@ -85,12 +93,15 @@ Build traps:
 R:
 
 - **Commit `renv.lock`** (`renv::init()`, `renv::snapshot()`). Without it the
-  build installs nothing, says so, and the app dies at its first `library()`.
+  build installs nothing and says so (`toft check` warns `no_renv_lock`): a
+  Shiny or plumber app dies at its first `library()` (`not_ready`), and an R
+  Markdown or Quarto document fails the deploy at the render step, naming the
+  missing package.
 - Packages come from a binary repository; one without a binary for the
   platform (often an old pinned version) compiles from source — slow, on every
   cold build. Keep the lockfile small.
-- **Keep helper scripts out of the root**: a root `.R` with a `#*` line can make
-  the repository plumber.
+- **Keep helper scripts out of the root**: a root `.R` with a `#* @get`-style
+  annotation makes the repository plumber.
 - **Do not bind a port or build a URL.** The platform runs `runApp` / `pr_run`
   with its own host and port. Shiny inherits the mount path; annotate plumber
   routes from the root (`#* @get /summary`).
@@ -107,9 +118,11 @@ attaching storage or an integration is 409 `static_app`.
 ## `toft.toml`
 
 Optional, committed, read at every deploy. Unknown tables are ignored, but **the
-build log names every key nothing read** (`manifest_unread`) — a misspelled key
-is a setting that stayed at its default, on a green deploy. `toft check`
-validates the file and prints the plan before you deploy.
+build log and `toft check` name every key nothing read** (`manifest_unread`) —
+a misspelled key is a setting that stayed at its default, on a green deploy.
+`[app]` reads `slug`, `install` and `installs."<url>".slug` and nothing else.
+`toft check` validates the file and prints the plan before you deploy; every
+problem it finds carries a `code` and a `hint` naming the line to write instead.
 
 ```toml
 [app]
@@ -119,7 +132,7 @@ slug = "reports"                  # written by `toft link`
 python = "3.13"                   # or a range: ">=3.12,<3.14"; node = "22"; r = "4.5"
 
 [static]
-root = "dist"                     # document root
+root = "dist"                     # document root; "." is the repository itself
 entry = "report.html"             # what the app's URL serves
 fallback = true                   # client-side routing
 
@@ -143,8 +156,8 @@ timezone = "Europe/London"        # optional; UTC without it
 schedule = "0 6 * * 1"
 
 [jobs.nightly-report]
-command  = "python -m reports.nightly"   # or args = [...] (Go's single binary)
-timeout  = "45m"                  # duration or seconds; omitted = install default
+command  = "python -m reports.nightly"   # or args = ["job", "nightly"]: the Go binary's arguments (a leading "./toft-app" is dropped)
+timeout  = "45m"                  # duration ("90s", "45m", "2h", "7d") or seconds; 1 s to 7 days; omitted = install default
 schedule = "0 3 * * *"            # optional; omit for a job something starts
 timezone = "Europe/London"        # optional; never a CRON_TZ= prefix
 overlap  = "skip"                 # queue (default) | skip — scheduled firings only
@@ -158,11 +171,21 @@ help     = "Which region to report on"
 choices  = ["emea", "amer", "apac"]
 ```
 
-**`[runtime]`** — Node is matched on the major alone (`"22.1.0"` is refused),
-Python and R on major.minor; ranges use `>=`, `<`, `==3.13.*`. Go is pinned by
-`go.mod`'s `go` line, and `[runtime] go` is refused. A pyproject
-`requires-python` moves the Python default only when it excludes it. A version
-the install lacks is `runtime_version`; `toft whoami` lists what it carries.
+**`[runtime]`** — a pin is a quoted string (`node = 22` is refused: *write node
+= "..."*). Node is matched on the major alone, Python and R on major.minor;
+ranges use `>=`, `<`, `==3.13.*`. A pin of the wrong width is refused with your
+own line at the right one: `"22.1.0"` → write `"22"`, `"3.13.18"` → `"3.13"`,
+`"3"` → `"==3.*"`. A pyproject `requires-python` moves the Python default only
+when it excludes it; a pin it excludes is warned about
+(`pin_excluded_by_requires_python`). A version the install lacks is
+`runtime_version`, with a hint; `toft whoami` lists what it carries. A
+dependency with no wheel for the default Python (pyyaml on 3.15, so marimo) is
+fixed by pinning an earlier line here — the dependency scan honors the pin.
+
+**Go is the exception**: `go.mod`'s `go` line is a floor, not a pin, and
+`[runtime] go` is refused. A `go` line newer than the install carries is a
+warning (`go_toolchain_fetched`), not a refusal — the build has the go command
+fetch that toolchain, and fails only if it cannot.
 
 **`[env]`** — each deploy adds a declared variable the app lacks, with its
 default and flag; it never changes or removes an existing one, and skips a name
@@ -181,13 +204,18 @@ deploy): `storage_entry_invalid`, `storage_name_ambiguous` (same name+folder
 twice), `storage_path_taken`, `storage_unknown`, `storage_not_attachable_by_owner`,
 `storage_not_attachable_by_you`, `storage_level_above_ceiling`,
 `storage_conflicts_console_mapping`, `storage_deleting`, `storage_needs_root`.
+`storage_not_attachable_by_you` is also what a `toft store` grant gets: a grant
+lets a person put and get objects, it is not a right to attach — that needs a
+manage delegation from an administrator, to you or the app's owner. A name you
+hold nothing on reads `storage_unknown`, whether or not it exists.
 
 **`[jobs.<name>]`** — the only way a job exists (no UI or CLI creates one); it
 versions and rolls back with the code. Names: lowercase letters, digits, inner
 dashes. Parameters are enforced at start, all 400 and not retryable:
 `param_required`, `param_type`, `param_choice`, `param_unknown`; a `default`
 fills an absent one. A job declaring no params takes any. CLI `--param` strings
-are coerced to the declared type.
+are coerced to the declared type; a `float` param arrives as a float (`2` and
+`"2"` are `2.0`), defaults included.
 
 - **Refused as `removed_key`** (hint names the replacement): `retries` (runs are
   never retried; a person reruns), `viewer_runnable` (the app's own button
@@ -202,7 +230,10 @@ are coerced to the declared type.
 - `notify` alerts owners per failed (`failures`) or finished (`always`) run;
   skipped and cancelled say nothing.
 - A Go job runs the built binary and dispatches on its arguments:
-  `command = "./toft-app job nightly-report"`.
+  `command = "./toft-app job nightly-report"`, or `args = ["job",
+  "nightly-report"]` — on a `[batch]` Go app too. `args` are the binary's
+  arguments; a leading `./toft-app` there is dropped, never passed as
+  `os.Args[1]`.
 - Jobs run with or without a cluster (a container per run, or a process on the
   install's machine) with the same limits and record.
 
@@ -252,13 +283,17 @@ Python is the reference below; the others differ like this:
 - **Go** — `ctx` first on every network call; errors not exceptions; options
   are structs (`toft.EmailMessage{…}`, `toft.StartOptions{Params: …}`,
   `toft.WaitOptions{Timeout: …}`); exported `toft.App`, `toft.Data`,
-  `toft.Notify`, `toft.Jobs`; JSON numbers come back `float64` (unmarshal
-  `Document.Data` into your own struct).
-- **R** — functions, not methods (`store_upload(store("drop"), "x.csv")`); a
-  refusal is a condition of class `toft_error`. No `can()`, no session scratch,
-  no Slack file upload, no `tail`. `viewer(headers)` is R's *who*;
-  `viewer_jobs(req)` is the act-as-viewer object. Headers can be plumber's
-  `req` / `req$HEADERS` or Shiny's `session$request`.
+  `toft.Notify`, `toft.Jobs`; JSON numbers in `Document.Data` are `float64`,
+  in `Set`'s answer as in `Get`'s — `doc.Decode(&v)` (`(bool, error)`, false
+  when nothing is stored) reads the document exact, an `int64` field getting
+  the integer.
+- **R** — functions, not methods (`store_upload(store("drop"), "x.csv")`, or
+  the store's name: `store_upload("drop", "x.csv")`); a refusal is a condition
+  of class `toft_error`. No `can()`, no session scratch, no Slack file upload,
+  no `tail`. `viewer(headers)` is R's *who*; `viewer_jobs(req)` is the
+  act-as-viewer object. Headers can be plumber's `req` / `req$HEADERS` or
+  Shiny's `session$request`. `current_run()` names how a run started in
+  `$trigger` (there is no `started_by`).
 
 ### When the platform says no
 
@@ -277,15 +312,20 @@ Go: `toft.AsError(err)`, or `errors.As` to `*toft.QueueFullError` (`InFlight`,
 retryable 4xx is yours to loop on, honoring `retry_after` / `retryAfter` /
 `RetryAfter`.
 
+**A refusal the SDK makes itself is always coded and never retryable** — a bad
+argument, a missing local file, a call off the platform. Only a request that
+failed in transport, never reaching the platform, is uncoded and retryable, so
+an agent's retry loop cannot spin on a local mistake.
+
 Codes worth handling (all `retryable: false` unless noted):
 
 | Area | Codes |
 |---|---|
-| raised by the SDK before any request | `bad_request` (blank text, empty session id, non-object app data, R arg checks), `no_viewer`, `would_outlive_request`, `no_recipient`, `no_output`, `off_platform`, `storage_env_invalid` |
-| jobs | `queue_full` (429, **retryable**, `retry_after`), `wait_timeout` (**retryable**; the run is still going; Go's cancelled ctx is `wait_cancelled`), `viewer_anonymous` (403), `job_send_only`, `param_*` |
+| raised by the SDK before any request | `bad_request` — an argument it will not send: blank text, an empty session id or job name, a `jobs.list` status that is not one of the eight run statuses (Node exports them as `RUN_STATUSES`), a `limit` out of range (Python 1–200; Go and R non-negative), `progress` outside 0–100, `app.can("")`, `access_token("")`, a non-JSON body (NaN included), app data that is not an object (R: anything but a named list), a scratch path outside the scratch root, an unreadable local file. `not_found` — a local file that is not there. `off_platform` — the platform's variables are absent, or a run handle made outside a job. Also `no_viewer`, `would_outlive_request`, `no_recipient`, `no_output` (a write with no output location), `storage_env_invalid` (a malformed `TOFT_STORAGE`), `not_json` (Node `outputJson()` on bytes that are not JSON); Go adds `write_failed`, `scratch_unavailable`, `entropy_unavailable` |
+| jobs | `queue_full` (429, **retryable**, `retry_after`), `wait_timeout` (**retryable**; the run is still going; Go's cancelled ctx is `wait_cancelled`), `viewer_anonymous` (403), `job_send_only`, `param_*`, `idempotency_key_reused` (409: the same key with a different job, params or `scheduled_for`), `params_too_large` (413, `limit_bytes` 65536) |
 | storage | `not_mapped`, `ambiguous_mount`, `not_mounted`, `insufficient_access`, `already_exists`, `not_found`, `not_a_store`, `invalid_name`, `store_uploads_off` (404) |
 | identity / data | `viewer_identity_disabled`, `version_conflict`, `rate_limited` (**retryable**) |
-| tokens | `<kind>_tokens_off` (403), `token_too_wide` (409) |
+| integrations and tokens | `<kind>_off` (403: no connection, e.g. `sharepoint_off`, `slack_off`), `<kind>_not_attached`, `<kind>_disabled`, `<kind>_tokens_off` (403), `unknown_capability` (400: a kind the install does not offer), `token_too_wide` (409) |
 | redirects | `unexpected_redirect` (R; others say `unexpected redirect from <path>`) |
 
 Every call gives up after 30 s (object-store transfers after 5 min) and follows
@@ -304,6 +344,8 @@ Go: `toft.App.Self(ctx)` → `AppInfo{ID, Slug, Name, Mode, BasePath, …}`,
 `toft.App.Can(ctx, "email")`. R: `app_info()` (cached; `refresh = TRUE`),
 `app_base_path()`, check `app_info()$capabilities`.
 
+- `id` and `slug` need the platform like every other field: off-platform they
+  raise `off_platform` (Node too — never `""`).
 - `mode` is **this workload's** mode, right from the first request.
 - `base_path` equals `BASE_PATH` and is never `""` on a mounted app.
 - **The answer is cached for the process.** An integration or storage mapping
@@ -332,22 +374,27 @@ R `caller_role(headers)`, `caller_can(headers, "editor")`, `viewer(headers)`.
   (a schedule firing), `app` — or `unknown` (missing, unverifiable or expired),
   which passes no `at_least`. The assertion lasts two minutes: in Streamlit,
   read it once at the top of the script.
-- **`who`** answers `None` for an anonymous visitor or an API key. It raises
+- **`who`** answers `None` for an anonymous visitor, an API key, or a request
+  with no act-for header at all (a health check, a job). It raises
   only `viewer_identity_disabled` — a signed-in viewer on an app whose
-  administrator has not turned viewer identity on. Cached ~60 s.
+  administrator has not turned viewer identity on. Cached ~60 s. Node: an
+  anonymous `Viewer` prints as `[Viewer: an anonymous visitor; nobody is signed in]`.
 - `role` is what the person may do to *this deployment in Toft*, not domain
   authority — put invoice rules on groups. `is_admin` is separate: an
   administrator has effective ownership of every app, so `role == "owner"` alone
   grants every administrator. `email` is `None` on a public app.
-- An API key carries no viewer: a request authorized by a key reaches the app as
-  its owner with nobody on it. Use a signed-in session (`toft fetch --session`)
-  to test viewer code.
+- **An API key carries its owner's role but no viewer.** The gateway signs the
+  key owner's role onto the request — `caller()` reports it (`owner` for the
+  owner's key) with `is_person` and `signed_in` true, meaning *a role on the
+  person ladder* — but sends no act-for header, so `who()` is `None` and
+  `viewer()` raises `no_viewer`. Use a signed-in session (`toft fetch
+  --session`) to test viewer code.
 
 ### Files
 
 | Python (Node / Go) | What it is |
 |---|---|
-| `toft.scratch_dir("uploads")` (`scratchDir` / `ScratchDir`) | per app, **wiped on every start, restart and redeploy**; a temp dir off-platform |
+| `toft.scratch_dir("uploads")` (`scratchDir` / `ScratchDir`) | per app, **wiped on every start, restart and redeploy**. Parts stay inside it: an absolute part, or one whose `..` climbs out, is `bad_request`. Off-platform (Python, Node) a private `0700` `toft-scratch-<uid>/<app>` under the temp dir |
 | `toft.session_scratch_dir(sid)` (`sessionScratchDir` / `SessionScratchDir`) | one browser login's corner; `sid` from the `X-Toft-Session` header. The id is hashed; empty is `bad_request` |
 | `toft.new_session_id()` | for anonymous viewers (no header): mint one and keep it in **your own cookie** — never a name starting `toft_`, which the platform strips |
 | `toft.mounts()` | every mapping: `name`, `kind`, `path`, `access`, `folder`, `read_only`, `mounted` |
@@ -372,6 +419,15 @@ lookup with no folder raises `ambiguous_mount`, listing them; name the folder �
 `{ folder: "backup" }`, Go `StorageIn` / `StoreIn("drop", "backup")`, R
 `storage("drop", "backup")`. An empty folder names the root.
 
+**A name not mapped to this app is `not_mapped`**, listing what is — in every
+language, for every operation (Go: each method of the zero `Mount` that
+`Store` returns beside the error; R: every `store_*()` given that name; the
+platform's own `store_not_mapped` is reported as `not_mapped`). The fix is a
+mapping on the app's Storage tab by an administrator, or a `[[storage]]` entry
+in `toft.toml` from someone who may attach it — the SDK's sentence names only
+the first. Node's `storage()` and `store()` off-platform raise `off_platform`
+instead.
+
 R: `scratch_dir()` takes no argument and is not storage. A `mounts()` entry is a
 list whose `$path` is `""` for a signed-URL store, so `file.path(m$path, "x")`
 silently becomes `/x` — use `mount_path(m)`, which refuses `not_mounted`.
@@ -390,12 +446,20 @@ toft.data.clear()
 ```
 
 One JSON object per app, 256 KiB, no keys or queries; survives restart,
-redeploy and rollback. Writes return the document written. `update` re-reads on
-a version conflict (5 attempts, then `version_conflict`) and waits out
-`rate_limited` without spending attempts. Go `Data.Get/Read/Set/SetIf/Update/Clear(ctx…)`;
+redeploy and rollback. Writes return the document written. **Versions never
+repeat**: a clear leaves a tombstone at the next version, so the first write
+after it continues the count, and an `if_version` read before the clear is
+`version_conflict` (412). `update` re-reads on a version conflict (5 attempts,
+then `version_conflict`) and waits out `rate_limited` without spending
+attempts — Python for up to 300 s in all, honoring `Retry-After`; Node and Go
+for up to 30 waits; R retries once, as every R call does. Past that it raises
+`rate_limited` itself. Go `Data.Get/Read/Set/SetIf/Update/Clear/ClearIf(ctx…)`;
 R `app_data_get()`, `app_data_read()`, `app_data_set(value, if_version)`,
-`app_data_update(fn)` — a get-then-set without the version can lose a write.
-State, not a database.
+`app_data_update(fn)`, `app_data_clear(if_version = NULL)` (`TRUE` when there was
+a document). **R's `app_data_set` and `app_data_update` return the document** —
+`list(data, version, empty = FALSE)`, as `app_data_read()` shapes it — not the
+bare version number they returned before 3 November 2026. A get-then-set without
+the version can lose a write. State, not a database.
 
 ### Telling someone
 
@@ -419,13 +483,15 @@ send = toft.notify.status(send)       # .status, .done, .delivered, .blocked
   `notify("email", to = "finance@example.com", subject = "…", text = body)` (`to`,
   `cc`, `bcc` take one address or several), `notify_status(send)`. No file
   uploads from R. (An R SDK from before 3 November 2026 sent a lone address as
-  a string the platform refused: wrap it in `list()` there.)
+  a string the platform refused: wrap it in `list()` there.) `notify(NULL, …)`
+  is `bad_request`.
 
 The app never names a channel, folder, sender or reply-to (those fields are
 refused); the administrator's attachment decides. A send returns once accepted
 and recorded; delivery happens after, and the record (`status`) is what a
 workflow may rely on. Email needs a `to` (`no_recipient`), a subject and `text`
-even with `html`.
+even with `html`; a `to` that is not an address or a list of them (`None`
+included) is `bad_request`.
 
 ### Calling Graph or Drive directly
 
@@ -444,7 +510,12 @@ Node `await toft.accessToken(kind)`, `toft.azureCredential(kind)`; Go
 `Credentials`). Cached per kind and refreshed five minutes before expiry. The
 folder is a hint, not a fence — the token reaches all the grant does. Never log
 `token.value` (the token object's printed form hides it). Refusals:
-`<kind>_tokens_off` (403), `token_too_wide` (409). A job may use one too.
+`<kind>_off` (403) when the install has no such connection, `<kind>_not_attached`
+when it is not attached to this app, `<kind>_tokens_off` (403) when tokens are
+not allowed on it, `unknown_capability` (400) for a kind that is not one of the
+three, `token_too_wide` (409). `access_token("")` and Python's
+`azure_credential` of anything but `sharepoint`/`onedrive` are `bad_request`.
+A job may use one too.
 
 ### Background work
 
@@ -497,7 +568,7 @@ run.succeeded, run.status, run.failure_reason, run.output(), run.output_json(), 
 | | Python | Node | Go | R |
 |---|---|---|---|---|
 | start | `jobs.start(job, params=, idempotency_key=)` | `jobs.start(job, { params, idempotencyKey })` | `Jobs.Start(ctx, job, StartOptions{Params, IdempotencyKey})` | `job_start(job, params =, idempotency_key =)` |
-| respond | `jobs.respond(run, request=)` | `jobs.respond(run, req)` | `Jobs.Respond(w, r, run)` | `job_respond(run)` |
+| respond | `jobs.respond(run, request=)` | `jobs.respond(run, req)` | `Jobs.Respond(w, r, run)` | `job_respond(run, res, req)` (found in the handler's frame when left out) |
 | wait | `run.wait(timeout=, headers=)` | `run.wait({ timeoutMs, headers })` | `run.Wait(ctx, WaitOptions{Timeout, Request})` | `job_wait(run, timeout =, request =)` |
 | read | `jobs.get(id)` · `jobs.list(job=, status=, limit=)` · `run.refresh()` | `get` · `list({ job, status })` · `refresh()` | `Get` · `List(ctx, ListOptions{})` · `Refresh` | `job_get` · `job_list` · `job_refresh` |
 | a person's runs | `viewer(h).jobs.mine(job=)` | `viewer(h).jobs.mine({ job })` | `me.Jobs.Mine(ctx, ListOptions{})` | `job_mine(req, job =)` |
@@ -507,16 +578,27 @@ A run carries `id`, `job`, `status` (`queued`, `running`, `succeeded`, `failed`,
 `timed_out`, `out_of_memory`, `cancelled`, `skipped`), `started_by` (`app`,
 `viewer`, `cli`, `schedule`, `ui`), `rerun_of`, `params`, `scheduled_for`,
 `deadline`, `progress`, `progress_message`, `queue_position`, `exit_code`,
-`failure_reason` in words, `peak_memory_mb`, `status_url`, `deduplicated`;
-`done` is any status but queued/running.
+`failure_reason` in words, `peak_memory_mb`, `status_url`, `deduplicated`
+(always present on a start's answer, true or false); `done` is any status but
+queued/running.
 
-- **A repeated start is the same run**: a start matching one in flight or
-  finished in the last minute (same person, same params) returns it with
-  `deduplicated`; an explicit idempotency key holds 24 h.
+- **`output()` is `None` / `null` / `nil` when the run wrote nothing** (R
+  `NULL`); empty bytes mean it wrote an empty output. A 404 for any other reason
+  (no such run) raises. `output_json()` / `outputJson()` / `OutputJSON` answer
+  `None` / `null` / `false` for no output.
+- `job_cancel()` in R returns the run read again after the cancel.
+- **A repeated SDK start is the same run**: a start from the app (`toft.jobs`
+  or `viewer(h).jobs`) matching one in flight or finished in the last minute
+  (same person, same params) returns it with `deduplicated`. That implicit
+  window is the app route's alone — `toft job run` and Toft's Run button make
+  a new run every time. An explicit idempotency key dedups on both, for 24 h;
+  reusing one with a different job, params or `scheduled_for` is 409
+  `idempotency_key_reused`.
 - **A run is never retried.** A person reruns it (`toft job rerun`, or in Toft),
   which records `rerun_of`.
 - **Params are the only input** — recorded and shown, so never secrets; 64 KB
-  cap. Larger input goes to storage, and a param names where.
+  cap (413 `params_too_large`). Larger input goes to storage, and a param names
+  where.
 - **`toft.jobs` is the app; `toft.viewer(headers).jobs` is the person** (their
   `mine()`, `started_by: viewer`). `viewer()` raises `no_viewer` with no act-for
   header (API key, health check). An anonymous visitor carries one naming
@@ -548,11 +630,18 @@ tell which entrypoint it is in.
   named. `None` otherwise, never *now*: a rerun of Tuesday processes Tuesday.
   Check `rerun_of` before repeating a side effect.
 - `log` is a print the runner ships to the run's log, flushed so a killed run
-  keeps its last lines.
-- **A job holds no app token.** It may notify, use `toft.store(…)` (over signed
-  URLs where not mounted) and get provider tokens; every other app call
-  (`toft.data`, `toft.who`, starting a job, `toft.app`) is refused
-  `job_send_only` — do it in the service, or write output the service reads back.
+  keeps its last lines. **Order is kept within a stream, not across them**: the
+  runner reads stdout and stderr as two pipes, so an `error=True` line can land
+  before or after the plain lines printed around it.
+- **A job holds no app token, no `PORT` and no request.** It may notify, use
+  `toft.store(…)` (over signed URLs where not mounted) and get provider tokens.
+  `who()` with no act-for header answers `None` without asking. Every other app
+  call — `toft.data`, `toft.app` (its `id` and `slug` included), starting a job,
+  `who` given a header — is refused `job_send_only`, whose sentence names the
+  job and the run. Node is the exception for the two fields it reads from the
+  environment: `app.slug` answers from `TOFT_APP_SLUG`, and `app.id` is
+  `off_platform` because `TOFT_APP_ID` is the service's alone. Do it in the
+  service, or write output the service reads back.
 
 ## Once it is deployed
 
