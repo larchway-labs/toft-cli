@@ -330,12 +330,12 @@ Codes worth handling (all `retryable: false` unless noted):
 
 | Area | Codes |
 |---|---|
-| raised by the SDK before any request | `bad_request` — an argument it will not send: blank text, an empty session id or job name, a `jobs.list` status that is not one of the eight run statuses (Node exports them as `RUN_STATUSES`, named and on the default `toft`), a `limit` out of range (Python and Node 1–200; Go and R non-negative), `progress` outside 0–100, `app.can("")`, `access_token("")`, a non-JSON body (NaN included), app data that is not an object (R: anything but a named list), a scratch path outside the scratch root, an unreadable local file. `not_found` — a local file that is not there. `off_platform` — the platform's variables are absent, or a run handle made outside a job. Also `no_viewer`, `would_outlive_request`, `no_recipient`, `no_output` (a write with no output location), `storage_env_invalid` (a malformed `TOFT_STORAGE`), `not_json` (`output_json()` / `outputJson()` / `OutputJSON` / `job_output(json = TRUE)` on bytes that are not JSON, an output written empty included, in all four; no output at all is `None`/`null`/`false`/`NULL`). A role word that is not one — `at_least("superuser")`, `caller_can(h, "")` — is `bad_request` (Go: `AtLeast` panics with that `*toft.Error`, having only a bool to return); `system`, `app` and `unknown` are roles and answer false. Node: a negative or NaN `rateLimitTimeout`; `RUN_STATUSES` and `TERMINAL_STATUSES` are read-only (`add` throws). Go adds `write_failed` (a local disk write), `scratch_unavailable`, `entropy_unavailable` |
+| raised by the SDK before any request | `bad_request` — an argument it will not send: blank text, an empty session id or job name, a `jobs.list` status that is not one of the eight run statuses (Node exports them as `RUN_STATUSES`, named and on the default `toft`), a `limit` out of range (Python and Node 1–200; Go and R non-negative), `progress` outside 0–100, `app.can("")`, `access_token("")`, a non-JSON body (NaN included), app data that is not an object (R: anything but a named list), a scratch path outside the scratch root, an unreadable local file. `not_found` — a local file that is not there. `off_platform` — the platform's variables are absent, or a run handle made outside a job. Also `no_viewer`, `would_outlive_request`, `no_recipient`, `no_output` (a write with no output location), `storage_env_invalid` (a malformed `TOFT_STORAGE`; in Python, Go and R also an entry without its `name`, `kind` or `access`), `not_json` (`output_json()` / `outputJson()` / `OutputJSON` / `job_output(json = TRUE)` on bytes that are not JSON, an output written empty included, in all four; no output at all is `None`/`null`/`false`/`NULL`). A role word that is not one — `at_least("superuser")`, `caller_can(h, "")` — is `bad_request` (Go: `AtLeast` panics with that `*toft.Error`, having only a bool to return); `system`, `app` and `unknown` are roles and answer false. Node: a negative or NaN `rateLimitTimeout`; `RUN_STATUSES` and `TERMINAL_STATUSES` are read-only (`add` throws). Go adds `write_failed` (a local disk write), `scratch_unavailable`, `entropy_unavailable` |
 | jobs | `queue_full` (429, **retryable**, `retry_after`), `wait_timeout` (**retryable**; the run is still going; Go's cancelled ctx is `wait_cancelled`), `viewer_anonymous` (403), `act_for_required` (403: cancelling a run a person started that has not finished — only that person may; a finished one answers as a no-op), `job_send_only`, `param_*`, `idempotency_key_reused` (409: the same key with a different job, params or `scheduled_for`), `params_too_large` (413; the body's `limit_bytes`, 65536 — Python `e.body["limit_bytes"]`, Node `err.body.limit_bytes`, Go `e.Body["limit_bytes"]` (a `float64`), R `e$body$limit_bytes`) |
 | storage | `not_mapped`, `ambiguous_mount`, `not_mounted`, `insufficient_access`, `already_exists`, `not_found`, `not_a_store`, `invalid_name`, `store_uploads_off` (404) |
 | identity / data | `viewer_identity_disabled`, `version_conflict`, `rate_limited` (**retryable**), `too_large` (413: a document over 256 KiB; the body's `limit` is 262144) |
 | integrations and tokens | `<kind>_off` (403: no connection, e.g. `sharepoint_off`, `slack_off`), `<kind>_not_attached` (403, e.g. `email_not_attached`, `slack_not_attached`), `<kind>_disabled`, `<kind>_tokens_off` (403), `unknown_capability` (400: a token kind the install does not offer), `token_too_wide` (409) |
-| notify | `no_recipient`, `bad_recipient` (400: an address the platform will not send to), `too_many_recipients`, `too_large` (413: a message or attachment over the limit), `destination_not_allowed` (400: a `channel`, folder or other destination field — the app's owners choose it on the Integrations tab), `sender_not_allowed` (400: `from`, `reply_to` or headers on an email), `unknown_kind` (400: `notify.send` of a kind that is not one — notify's own code, tokens say `unknown_capability`) |
+| notify | `no_recipient`, `bad_recipient` (400: an address the platform will not send to), `too_many_recipients`, `too_large` (413: a message or attachment over the limit), `destination_not_allowed` (400: a `channel`, folder or other destination field — the app's owners choose it on the Integrations tab), `sender_not_allowed` (400: `from`, `reply_to` or headers on an email), `unknown_kind` (400: `notify.send` of a kind that is not one — notify's own code, tokens say `unknown_capability`). Node raises the two `_not_allowed` codes itself, before any request (`channel`, `folder`, `url`, `routingKey`…; `from`, `replyTo`/`reply_to`, `headers`), and any other option a call does not take is `bad_request` |
 | redirects | `unexpected_redirect` (R; others say `unexpected redirect from <path>`) |
 
 Every call gives up after 30 s (object-store transfers after 5 min) and follows
@@ -416,7 +416,7 @@ R `caller_role(headers)`, `caller_can(headers, "editor")`, `viewer(headers)`.
 | `toft.scratch_dir("uploads")` (`scratchDir` / `ScratchDir`) | per app, **wiped on every start, restart and redeploy**. Parts stay inside it: an absolute part, or one whose `..` climbs out, is `bad_request`. Off-platform a private `0700` `toft-scratch-<uid>/<app>` under the temp dir |
 | `toft.session_scratch_dir(sid)` (`sessionScratchDir` / `SessionScratchDir`) | one browser login's corner; `sid` from the `X-Toft-Session` header. The id is hashed; empty is `bad_request` |
 | `toft.new_session_id()` | for anonymous viewers (no header): mint one and keep it in **your own cookie** — never a name starting `toft_`, which the platform strips |
-| `toft.mounts()` | every mapping: `name`, `kind`, `path`, `access`, `folder`, `read_only`, `mounted` |
+| `toft.mounts()` | every mapping: `name`, `kind`, `path`, `access`, `folder`, `read_only`, `mounted` (R: list elements; Go: the encoded `Mount`, with `ReadOnly()` / `Mounted()` as methods) |
 | `toft.storage("reports").path` (`Storage(…).Path`) | a durable volume, resolved by name |
 | `toft.store("reports").put(path, name=None)` (`Store(…).Put(path, name)`) | a file into an object store **mounted here** |
 | `toft.store("reports").upload(path)` · `download(name)` · `url(name, attachment=True)` · `remove(name)` · `list(path)` | the same store over signed URLs — works mounted or not, where the install has a store signer (else `store_uploads_off`) |
@@ -436,11 +436,13 @@ object**; use `store_put`.
 lookup with no folder raises `ambiguous_mount`, listing them; name the folder —
 `toft.storage("drop", folder="backup")` / `toft.store(…, folder=…)`, Node
 `{ folder: "backup" }`, Go `StorageIn` / `StoreIn("drop", "backup")`, R
-`storage("drop", "backup")`. An empty folder names the root.
+`storage("drop", "backup")`. An empty folder names the root; one that is
+absolute or has a `.` or `..` segment is `invalid_name` (Python, Go, R).
 
 **A name not mapped to this app is `not_mapped`**, listing what is — in every
 language, for every operation (Go: each method of the zero `Mount` that
-`Store` returns beside the error; R: every `store_*()` given that name; the
+`Store` returns beside the error — and the volume's `Mount` it returns beside
+`not_a_store` answers `not_a_store`; R: every `store_*()` given that name; the
 platform's own `store_not_mapped` is reported as `not_mapped`). The fix is a
 mapping on the app's Storage tab by an administrator, or a `[[storage]]` entry
 in `toft.toml` from someone who may attach it — the SDK's sentence names only
@@ -605,7 +607,9 @@ A run carries `id`, `job`, `status` (`queued`, `running`, `succeeded`, `failed`,
 `viewer`, `cli`, `schedule`, `ui`), `rerun_of`, `params`, `scheduled_for`,
 `deadline`, `progress`, `progress_message`, `queue_position`, `exit_code`,
 `failure_reason` in words, `peak_memory_mb`, `status_url`, `logs_url`
-(`/api/v1/app/job-runs/<id>/logs`), `deduplicated` (always present on a start's
+(`/api/v1/app/job-runs/<id>/logs`, the path the app's token opens; `toft`
+shows the same run with `/api/v1/apps/<app-id>/job-runs/<id>/logs`, the
+path a person's key opens), `deduplicated` (always present on a start's
 answer, true or false, and in `respond()`'s 202 body); `done` is any status but
 queued/running. `rerun_of`, `scheduled_for` and `failure_reason` are null when
 empty — present, in all four (R `NULL`, its run a list with `$done` too).
@@ -648,9 +652,12 @@ run.started_by, run.rerun_of, run.scheduled_for, run.deadline
 ```
 
 Node `toft.run` (`progress`, `log(msg, { error })`, `writeOutput`,
-`writeOutputJson`, `scheduledFor`); Go `toft.CurrentRun()` (`Params(&v)`,
+`writeOutputJson`, `scheduledFor`; printed or `JSON.stringify`'d it shows no job
+token and no output URL); Go `toft.CurrentRun()` (`Params(&v)`,
 `Progress(ctx, pct, msg)`, `Log(msg, isError)`, `WriteOutput`,
-`WriteOutputJSON`, `ScheduledFor()`, `Deadline()`); R `current_run()`,
+`WriteOutputJSON`, `ScheduledFor()`, `Deadline()`; `%v`, `%+v` and
+`json.Marshal` show no job token and no output URL — nor does Python's
+`repr(toft.run)`, and R's run holds neither); R `current_run()`,
 `run_progress()`, `run_log()`, `run_write_output(data, json =)`,
 `scheduled_for()`. `None`/`null`/`nil`/`NULL` outside a job, so shared code can
 tell which entrypoint it is in.
@@ -662,7 +669,8 @@ tell which entrypoint it is in.
   whole-hour offset (`Etc/GMT+5`); a half-hour offset formats in UTC, with the
   sent text in `attr(x, "text")`. Node's `toft.run.scheduledFor` is a `Date`,
   which holds no zone (`+05:30` prints as `Z`); `scheduledForText` is the sent
-  text, offset included. A `JobRun`'s `scheduledFor` is that text.
+  text, offset included. A `JobRun`'s `scheduledFor` (and `scheduledForText`)
+  is the text the run record carries.
 - `log` is a print the runner ships to the run's log, flushed so a killed run
   keeps its last lines. **Order is kept within a stream, not across them**: the
   runner reads stdout and stderr as two pipes, so an `error=True` line can land
