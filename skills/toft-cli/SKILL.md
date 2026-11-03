@@ -234,8 +234,8 @@ needed. Never creates an app: no link is exit 2 `no_app`, naming `toft link
   bounce. **`toft start` is idempotent**: a stopped app prints `started`, a
   running one is left alone and prints `already running` (`--json`: `outcome:
   "already_running"`, `action: "none"`) — so "make sure it is up" never causes
-  downtime. `--json` carries `action` and `outcome` (the printed word — read
-  it, not `status`).
+  downtime. `--json` carries `action` and `outcome` (the printed word); `status`
+  is the same word — never `restarted` beside a start or an unchanged app.
   - A **document** (notebook, Quarto, R Markdown) prints `served again`: a
     changed variable reaches it at the next deploy, with a `note` saying so.
   - A **static** app prints `unchanged` (no process). `toft start` of a stopped
@@ -746,7 +746,8 @@ path   = "/data/sales"     # optional: default /storage/<name>[/<folder>]
 
 - **`toft storage ls`** — what you can attach and your ceiling on each;
   **`toft storage ls --app <slug>`** — what the app has, with `toft.toml` or
-  `console` beside each. `--json` passes the install's answer through.
+  `console` beside each. `--json` passes the install's answer through: one document,
+  `{mappings, pending, note}` — not a list, so not one line per row.
 - **The app's owner holds every entry**: the owner must be able to attach each
   at that level (a group-owned app through the group's *own* delegation).
   **The deployer is checked only on a change** — a new entry or a higher level.
@@ -763,7 +764,9 @@ path   = "/data/sales"     # optional: default /storage/<name>[/<folder>]
   `storage_requires_person`, `storage_conflicts_console_mapping` (attached in the
   console differently — match it, or have it detached), …. An entry wrong on
   its own — no `name`, an `access` off read/write/full, a bad `path`, one
-  resource twice, two entries at one path — is a `manifest_invalid` problem
+  resource twice, two entries at one path or one inside another (a resource
+  whole and a folder of it at `/storage/x` and `/storage/x/f`) — is a
+  `manifest_invalid` problem
   instead, with code `storage_entry_invalid`, `storage_name_ambiguous` or
   `storage_path_taken` and a `storage[i].<key>` field.
 - **A `toft store` grant is not an attach right.** Holding a grant lets you move
@@ -905,7 +908,7 @@ cat body.json | toft api POST apps/$ID/job-runs --data @-
 | Creating, editing or deleting a job, `[render]` or `[restart]` | Not a call: `toft.toml`, shipped with `toft deploy`. Pausing is above |
 | How big the machine is | `toft api GET system/health` (an administrator): `system.memory_total` (bytes) and `system.cpu_count`, on an install without a cluster. A job limit set above them is saved with a `warning` |
 | An app's tags | `PUT /api/v1/apps/{id}/tags` with ids of existing tags; creating tags is an administrator's |
-| Grants, storage resources, delegations, storage mappings made in the console, integrations | Administrator surfaces (UI, or API with `--session`). An administrator's key can create storage and attach it; grants, managers and integrations need `--session`. **Create** is `POST admin/storage` with `{"name","kind"}` plus what the install asks for: `backing` (left out, the one the install offers — `GET admin/storage` lists them), `storage_root` when the install keeps storage under host roots (left out, the single root when it declares one; with several, `storage_root_required` lists them), and `bucket` and `prefix` for a `store` or a bucket-backed volume. **Attach** is `PUT admin/storage/<id>/mappings/<app-id>` with `{"path","access","folder"}`, every key optional: `path` defaults to `/storage/<name>[/<folder>]` as in toft.toml; under a host root the level is the root's mount — `full` on a read-write root, `read` on a read-only one, anything else 400 `storage_level_unsupported` (leave `access` out to take it); `folder` is required on a partitioned resource (422 `storage_folder_required`). It takes effect at the app's next start — a restart or a deploy. `DELETE …/mappings/<app-id>` removes every mapping of that resource on the app; `?folder=<name>` removes one, and `?folder=` the whole-resource mapping. Attaching existing storage is a `[[storage]]` entry |
+| Grants, storage resources, delegations, storage mappings made in the console, integrations | Administrator surfaces (UI, or API with `--session`). An administrator's key can create storage and attach it; grants, managers and integrations need `--session`. **Create** is `POST admin/storage` with `{"name","kind"}` plus what the install asks for: `backing` (left out, the kind's default or the one the install offers, `host` where it offers host beside others; with several and neither, 422 `storage_backing_required` lists them — `GET admin/storage` does too; one named that the install does not offer is 422 `storage_backing_unavailable`), `storage_root` when the install keeps storage under host roots (left out, the single root when it declares one; with several, `storage_root_required` lists them), and `bucket` and `prefix` for a `store` or a bucket-backed volume. **Attach** is `PUT admin/storage/<id>/mappings/<app-id>` with `{"path","access","folder"}`, every key optional: `path` defaults to `/storage/<name>[/<folder>]` as in toft.toml; under a host root the level is the root's mount — `full` on a read-write root, `read` on a read-only one, anything else 400 `storage_level_unsupported` (leave `access` out to take it); `folder` is required on a partitioned resource (422 `storage_folder_required`). A path another of the app's mappings holds, or one inside or above it — the resource whole and a folder of it at `/storage/x` and `/storage/x/f` — is 409 `storage_path_taken` with a hint: an app holds a resource whole or by folder at nesting paths, not both. It takes effect at the app's next start — a restart or a deploy. `DELETE …/mappings/<app-id>` removes every mapping of that resource on the app; `?folder=<name>` removes one, and `?folder=` the whole-resource mapping. Attaching existing storage is a `[[storage]]` entry |
 | Publishing from RStudio | rsconnect's own surface (`/__api__`, the install posing as Posit Connect); an agent deploys with `toft` |
 
 ## When something refuses
@@ -914,9 +917,10 @@ cat body.json | toft api POST apps/$ID/job-runs --data @-
 |---|---|
 | `no app is linked in this directory` | `toft link <slug>`, or pass `--app` |
 | `that key has expired` (exit 3, `key_expired`) | mint another and `toft login --token-stdin` |
-| `invalid API key` (exit 3, `invalid_key`) | the install does not know this key — revoked, or minted on another install; check `TOFT_TOKEN`, or `toft login`. A credential not shaped like a key at all (not `toftu_…`/`toftd_…`) is the same refusal from `toft` itself, before anything is sent |
+| `invalid API key` (exit 3, `invalid_key`) | the install does not know this key — revoked, or minted on another install; check `TOFT_TOKEN`, or `toft login`. A credential not shaped like a key at all (not `toftu_…`/`toftd_…`) is the same refusal from `toft` itself, before anything is sent — a `TOFT_TOKEN` or a `--token-stdin` value alike |
 | `key_read_scope` (exit 3) | a read-only key; ask for a full one. Retrying changes nothing |
 | `unauthorized` (exit 3) | no credential reached a route that needs one — `toft login`, or set `TOFT_TOKEN` |
+| `no_app_token` (exit 3) | a route only a deployed app calls, with its `TOFT_APP_TOKEN` — an SDK-built URL such as `logs_url` opened with a person's key; use `toft logs` / `toft job runs` instead |
 | `app_key_removed` (exit 3) | a `toft_…` app key: that class was removed. Use a personal key (`toftu_…`) of an account granted on the app — `toft login` mints one |
 | `forbidden` (exit 3, `deny_system_role`) | the account is a **viewer**; publishing needs the publisher role, which only an administrator grants. A **personal** key can ask: an empty `POST /api/v1/me/promotion-requests` (notifies administrators; 409 if one is pending) — then say who must act. A deploy key or service account cannot |
 | `session_required` (exit 3) | an administrator's route; see `--session` |
