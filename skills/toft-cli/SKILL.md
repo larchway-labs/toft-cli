@@ -592,7 +592,7 @@ An app asks for storage an administrator has already created:
 ```toml
 [[storage]]
 name   = "sales-data"
-access = "read"            # read (default), write or full
+access = "full"            # read, write or full; left out: what the storage can serve
 folder = "2026"            # optional: one folder of the resource
 path   = "/data/sales"     # optional: default /storage/<name>[/<folder>]
 ```

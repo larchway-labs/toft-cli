@@ -131,7 +131,7 @@ DB_PASSWORD = { sensitive = true } # a secret: never a default
 
 [[storage]]                       # storage an administrator already created
 name   = "sales-data"
-access = "read"                   # read (default) | write | full
+access = "full"                   # read | write | full; left out: what the storage can serve
 folder = "2026"                   # optional: one folder of the resource
 path   = "/data/sales"            # optional: default /storage/<name>[/<folder>]
 
