@@ -274,7 +274,7 @@ hint.
   "3.13.18"` → `"3.13"`, `python = "3"` → `"==3.*"`. An unquoted `node = 22` is
   told to quote it.
 - Unknown keys under `[app]` (anything but `slug`, `install`,
-  `installs.<url>.slug`) are a `manifest_unread` warning, like any unread table.
+  `installs.<url>.slug`, `name`) are a `manifest_unread` warning, like any unread table.
 - Job limits print with their source — `nightly  timeout 45m (declared) ·
   memory 1024 MB (install default) · cpu 2 cores (install default)` — plus
   `sampled rather than held by the kernel` / `not enforced on this install`

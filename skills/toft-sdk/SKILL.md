@@ -120,13 +120,17 @@ attaching storage or an integration is 409 `static_app`.
 Optional, committed, read at every deploy. Unknown tables are ignored, but **the
 build log and `toft check` name every key nothing read** (`manifest_unread`) —
 a misspelled key is a setting that stayed at its default, on a green deploy.
-`[app]` reads `slug`, `install` and `installs."<url>".slug` and nothing else.
+`[app]` reads `slug`, `install`, `installs."<url>".slug` and `name` and nothing else —
+`name` is the display name `toft create` gives a new app when `--name` is not
+passed (the flag wins); it is read at create only, and a later rename in the app's
+settings is never undone by a deploy.
 `toft check` validates the file and prints the plan before you deploy; every
 problem it finds carries a `code` and a `hint` naming the line to write instead.
 
 ```toml
 [app]
 slug = "reports"                  # written by `toft link`
+name = "Reports"                  # the display name at `toft create`; --name wins
 
 [runtime]
 python = "3.13"                   # or a range: ">=3.12,<3.14"; node = "22"; r = "4.5"
@@ -611,7 +615,7 @@ queued/running.
 - **`toft.jobs` is the app; `toft.viewer(headers).jobs` is the person** (their
   `mine()`, `started_by: viewer`). `viewer()` raises `no_viewer` with no act-for
   header (API key, health check). An anonymous visitor carries one naming
-  nobody, and the start is refused `viewer_anonymous` — check the caller role
+  nobody, and every call on that viewer — start, `list`, `mine`, `get`, cancel — is refused `viewer_anonymous` — check the caller role
   first and use `toft.jobs`. The platform adds **no role gate**: who may press
   the button is the app's rule (`who` / `caller`).
 
