@@ -145,15 +145,19 @@ refusal — run it once before the first deploy. `--json` is the install's
   `toft env --json`, is this, with the subcommand in the hint), `conflicting_flags`,
   `confirmation_required` (unattended, no `--yes`), `cancelled` (answered no),
   `file_exists` (a download onto a file, without `--force`), `is_a_directory` (`fetch -o` a folder), `invalid_source`
-  (`logs --source`), `invalid_url`, `unreadable_file`, `empty_input` (nothing on
-  stdin), `invalid_duration` (`--since`, `--timeout`, `--within`…),
+  (`logs --source`), `invalid_url` (also a `TOFT_URL` or `--install` that is
+  not one), `unreadable_file`, `empty_input` (nothing on stdin, `env set
+  --from-file -` included), `invalid_limit` (`job runs --limit` below 1),
+  `invalid_jobs` (`-j` below 1), `unknown_language` (`sdk vendor` in a tree it
+  cannot read a language from — pass `--lang`), `invalid_duration` (`--since`, `--timeout`, `--within`…),
   `invalid_time`, `invalid_param` (a `--param` not written `k=v`),
   `invalid_json` / `invalid_method` (`toft api`), `no_credential` (`login
   --forget` of an install with none stored), `nothing_to_rebuild` (`redeploy`
   of an app made from an upload that has never deployed successfully — one
   that has is rebuilt from the source last uploaded), `sdk_language_unknown`, `unknown_skill`,
-  `invalid_slug`. An install that does not answer is exit 4, code
-  `unreachable`. **Each carries a `hint` too** — the step to take, at worst the
+  `invalid_slug` (`toft check` refuses one as `toft create` does). An install
+  that does not answer is exit 4, code `unreachable`; a server that answers
+  with a web page instead of Toft's API is `not_toft` (check the address). **Each carries a `hint` too** — the step to take, at worst the
   command's own `--help`.
 
 ## The loop
@@ -262,7 +266,8 @@ codes are `manifest_syntax` (the file does not parse; the line is named),
 `invalid_job_name`, `invalid_job_command`, `invalid_runtime`, `invalid_timeout`,
 `invalid_schedule`, `invalid_timezone`, `invalid_overlap`, `invalid_notify`,
 `invalid_expect_within`, `invalid_param`, `batch_and_static`, `removed_key`,
-`sensitive_default`, `env_entry_invalid`…, and `manifest_invalid` itself only
+`sensitive_default`, `env_entry_invalid`, `invalid_static` (a `[static]` root
+or entry this tree does not hold — `field: static.root`)…, and `manifest_invalid` itself only
 for what has no finer code; an unsatisfiable pin is `runtime_version`, with a
 hint.
 
@@ -274,7 +279,9 @@ hint.
 - `--json` `warnings` are sentences; `warning_details` gives each a `code`
   (e.g. `manifest_unread`) and, for a `toft.toml` key, its `table`. A skipped
   `.env` (`env_file_skipped`) and a secret-looking file that ships
-  (`secret_in_bundle`) are among them, each with its `path`.
+  (`secret_in_bundle`) are among them, each with its `path` — and a deploy's or
+  a create's `--json` result gives the same two the same way. The answer's
+  `restart` and `render` carry `stored`, the schedule as the deploy records it.
 - A `toft.toml` that does not parse is a check problem too — `reason:
   manifest_invalid`, `code: manifest_syntax`, the line in the message — exit 1.
 - Python: with no `[runtime] python`, a `requires-python` excluding the
@@ -387,7 +394,11 @@ toft deps --json | jq '.refused.findings[] | {package, version, advisory_id, sev
   re-derives findings without a deploy (same packages, same feed — only useful
   when one of those changed).
 
-`toft deps` needs edit access to the app.
+`toft deps` needs edit access to the app. Its `--json` also carries
+`scan_reason` (why the release was not scanned — `not_covered` for R,
+`unresolved` when the build's packages could not be listed), `locked_by_policy`
+(the policy itself holds the app locked, not an administrator) and `lock_on`
+(the severity the install locks at: off, malware, critical or high).
 
 ## Looking at the app
 
@@ -474,6 +485,10 @@ toft deployments prune --yes           # all but the serving one
 toft deployments delete 4f1a2b --yes   # a unique prefix (6+ characters) is enough
 toft delete my-app --yes               # the slug typed out; no undo
 ```
+
+`toft deployments list --json` rows carry `protected_reason` (why prune keeps
+one, empty when it can be deleted) and `step_timings` (each build step's
+timing, as the install recorded it) beside the status fields.
 
 **Environment**
 
@@ -611,7 +626,14 @@ result object writes one:
   wait that ran out, retryable), `timeout` (`fetch --timeout`, retryable),
   `interrupted` (a signal while stdin was read — nothing was sent, exit 1), and
   for `toft store`: `already_exists`, `insufficient_access`, `is_a_folder`,
-  `no_store`, `conflicting_flags`.
+  `is_an_object`, `store_busy`, `partial_failure`, `no_store`,
+  `conflicting_flags`. A password sign-in refused is exit 3
+  `invalid_credentials` (`local_sign_in_off`, `rate_limited`), each hinted.
+- Install-side codes you may meet beside these: `bad_gateway` (exit 1,
+  retryable — the object store behind a store did not answer),
+  `storage_root_unknown` (exit 1 — a host store whose root this install no
+  longer declares; an administrator's), `bucket_required` and
+  `invalid_storage_backing` (creating a store — the administrator's API).
 
 **The install's API speaks the same envelope**: every refusal from `toft api`,
 `curl` or the SDK is `{"error", "code", "retryable", "hint"?}`, and `code` is
@@ -660,7 +682,8 @@ the hint naming the replacement. **`toft task` is gone** (exit 2
   (`UTC` when undeclared), and `expect_within_sec` / `expect_within` (`"26h"`)
   are on every row, `null` when undeclared; `paused` (the schedule switched
   off in the UI until the next deploy) and `params_spec` (the same as
-  `params`, the install's own name) too.
+  `params`, the install's own name) too, beside `id`, `command`, `enabled`,
+  `timeout_sec`, `notify` and `overlap` as declared.
 - **`toft job run <name>`** starts a run and waits; **the run's outcome is the
   exit code**. With `--json`, an unsuccessful run prints the run document *then*
   the refusal (two lines, exit 1; `code` is the ending). `--follow` streams the
@@ -676,7 +699,7 @@ the hint naming the replacement. **`toft task` is gone** (exit 2
   (exit 1, code `wait_timeout`, retryable, naming `toft job wait <id>`; the run
   carries on).
 - **`toft job rerun <runID>`** — new run, same params and `--for`,
-  `rerun_of` set. **Nothing reruns automatically.** An unfinished run is exit 3
+  `rerun_of` set, `deduplicated: false` as `run`'s answer has it. **Nothing reruns automatically.** An unfinished run is exit 3
   `run_still_open` (wait or cancel first).
 - **`toft job wait <runID>`** — wait for a run started elsewhere (schedule, app,
   browser, `--no-wait`); same output and exits as `run`.
@@ -686,7 +709,9 @@ the hint naming the replacement. **`toft task` is gone** (exit 2
   A run document's **`logs_url` is the one your credential opens**: here
   `/api/v1/apps/<app-id>/job-runs/<id>/logs` (`toft job logs` reads it); the
   SDK's run, read with the app's own token, names
-  `/api/v1/app/job-runs/<id>/logs` for the same log.
+  `/api/v1/app/job-runs/<id>/logs` for the same log. A run document always
+  carries `rerun_of`, `scheduled_for` and `failure_reason`, `null` when empty,
+  beside `id`, `app_id`, `queued_at` and `created_at`.
 - **`toft job logs <runID>`** (`--follow`); **`toft job output <runID>`** — what
   it wrote with `write_output`, to stdout or `-o <file>` (`--force` to replace);
   `no_output` / `output_expired`.
@@ -702,7 +727,8 @@ run's reason says so, and no event is recorded), or the app's queue full
 job's next success resolves). Under `overlap = "queue"` a firing
 waits behind the previous scheduled run; a run you start never does.
 
-Refusals: `queue_full` exit 1 (retryable); `no_such_job`, `param_type`,
+Refusals: `queue_full` exit 1 (retryable; the document carries the install's
+`in_flight` — runs waiting — `limit` and `retry_after` seconds); `no_such_job`, `param_type`,
 `param_choice`, `param_unknown`, `param_required` exit 2; `jobs_unavailable`
 exit 3, kind `refused` (the install's hint says why — configuration, not your
 job).
@@ -753,7 +779,9 @@ path   = "/data/sales"     # optional: default /storage/<name>[/<folder>]
 - **`toft storage ls`** — what you can attach and your ceiling on each;
   **`toft storage ls --app <slug>`** — what the app has, with `toft.toml` or
   `console` beside each. `--json` passes the install's answer through: one document,
-  `{mappings, pending, note}` — not a list, so not one line per row.
+  `{mappings, pending}`, plus `note` when the install has one to add — not a
+  list, so not one line per row. Each mapping carries `authority` and `source`
+  beside its folder, access and path.
 - **The app's owner holds every entry**: the owner must be able to attach each
   at that level (a group-owned app through the group's *own* delegation).
   **The deployer is checked only on a change** — a new entry or a higher level.
@@ -813,9 +841,10 @@ with `path = "/data/cli"` at `…/storage/data/cli`. Never build the path
 yourself; read it.
 
 **Every path prints as `toft://<store>/<path>`** (folders end in `/`), and every
-subcommand takes that form back. One exception: `ls --json` is
-`{"folders": [...], "objects": [...]}` with names **relative to what was
-listed** (`"sub/"`, `"a.txt"`) — join them onto the path you listed. `<store>/<path>` works too — for `cp`/`mv`
+subcommand takes that form back. Under `--json`, `put`, `get` and `rm` give
+`store` and a store-relative `name`, with the `toft://` path as `object`;
+`ls --json` is `{"folders": [...], "objects": [...]}` with names **relative to
+what was listed** (`"sub/"`, `"a.txt"`) — join them onto the path you listed. `<store>/<path>` works too — for `cp`/`mv`
 with `toft://` on neither side, only when nothing in the working directory has
 the store's name (a local folder wins; write `toft://` to mean the store).
 
@@ -842,13 +871,19 @@ toft store rm -r --yes reports/2025/
 - **Exits**: 2 for a name that does not resolve (`not_found`) or is malformed
   (`bad_request`, `no_store` for `toft://` with no store), or a folder where an
   object was wanted (`is_a_folder` — `get`, and `cp`/`mv`/`rm` without `-r`,
-  with or without the trailing slash); 3 for a refusal of level or folder; 1
-  only when a transfer failed. `rm`, `cp` and `mv` resolve the source before
+  with or without the trailing slash), or an object where a folder was wanted
+  (`is_an_object` — `ls` of an object's path; a path that names nothing lists
+  empty); 3 for a refusal of level or folder; 1 only when a transfer failed. `rm`, `cp` and `mv` resolve the source before
   anything moves: a missing source is exit 2 `not_found`, nothing transferred.
 - **A batch in which every item was refused with one code is that refusal** —
   its exit and `code` (`cp` of one file onto an existing name at `write` is exit
-  3 `already_exists`, as `put` is); a mixed batch is exit 1 "n of m failed", and
-  `--json` items each carry their `code`.
+  3 `already_exists`, as `put` is); a mixed batch is exit 1 `partial_failure`
+  "n of m failed", and `--json` items each carry their `code` (a failed item's
+  `bytes` is 0).
+- **`store_busy`** (exit 1, retryable) is the store pacing you — host storage
+  admits four transfers per person at once. A batch backs off and retries it
+  itself, so a high `-j` slows down rather than fails; what still fails after
+  the retries carries the code.
 - `get -o - --json` is exit 2 `conflicting_flags` (both want stdout).
 - Each object moves on its own signed URL at your level on it. `-j N` parallel
   transfers (default 4); one failure does not stop the rest, exit 1 with a count.
@@ -901,7 +936,7 @@ cat body.json | toft api POST apps/$ID/job-runs --data @-
   gives `.app.id`).
 - Exits, coarser than HTTP: **2** — no such route (`route_not_found`), wrong
   method (`method_not_allowed`, hint names the right one), 404, 400, 409
-  `name_taken`, `param_*`, `no_such_job`, `params_too_large`; **3** — credential or permission, any
+  `name_taken` or `hostname_taken`, `param_*`, `no_such_job`, `params_too_large`; **3** — credential or permission, any
   other 409 (state refused), `jobs_unavailable`, `run_still_open`; **4** —
   unreachable; **1** — the rest: 5xx, 422, a 409 that is a wait
   (`deploy_queued`, `already_running`), `queue_full`. Branch on the body's
