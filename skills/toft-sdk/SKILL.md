@@ -370,10 +370,12 @@ Codes worth handling (all `retryable: false` unless noted):
 
 Every call gives up after 30 s in all, the resend included (object-store
 transfers after 5 min), and follows
-no redirect. **Every call, in all four languages, tries a `rate_limited` refusal
-once more** after the `Retry-After` it carried (a second refusal is raised), so a
-burst of calls is paced rather than refused: past the burst each call takes about
-a second. `update` and `wait` go further and ride it out to a deadline. The app's own calls share a rate limit of 60/min (burst 10); store
+no redirect. **Every call, in all four languages, waits a `rate_limited` refusal
+out** — the `Retry-After` it carried plus up to half a second of jitter, again and
+again, until the call's 30 s are spent — so a burst of calls, one after another or
+concurrent (a thread pool, `Promise.all`, goroutines), is paced rather than
+refused: past the burst each call takes about a second, and only one still
+waiting at 30 s is raised. `update` and `wait` go further and ride it out to a deadline. The app's own calls share a rate limit of 60/min (burst 10); store
 signing and reading runs have their own 600/min buckets.
 
 ### The app itself, and what it may do
