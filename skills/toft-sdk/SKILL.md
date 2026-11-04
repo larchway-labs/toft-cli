@@ -69,6 +69,7 @@ First match wins:
 | 11 | plumber | `plumber.R`, or a root `.R` file with a route annotation — `#* @get /x` (any of `@get`, `@post`, `@put`, `@delete`, `@head`, `@options`, `@patch`, `@use`; `#'` works too). A bare `#*` line is not one: such a tree is `unsupported_framework` |
 | 12 | Flask / FastAPI / Streamlit / Python | `requirements.txt`, `pyproject.toml` or `Pipfile` (framework read from it) **plus** a root `app.py`, `main.py`, `streamlit_app.py`, `server.py` or `wsgi.py` — no entry file, no deploy |
 | 13 | static | only with none of `package.json`, `requirements.txt`, `pyproject.toml`, `Pipfile`, `go.mod`, and an HTML entry |
+| 14 | Python | none of the files above and no HTML, but a root `app.py`, `main.py`, `streamlit_app.py`, `server.py` or `wsgi.py` — a plain Python app with no dependencies, run with `python <entry>` |
 
 Documents (rows 7, 9) are rendered **once, at build time** and served as files:
 no process behind the page, whatever a chunk prints is published, and a re-render
@@ -224,7 +225,8 @@ twice), `storage_path_taken`, `storage_unknown`, `storage_not_attachable_by_owne
 `storage_not_attachable_by_you` is also what a `toft store` grant gets: a grant
 lets a person put and get objects, it is not a right to attach — that needs a
 manage delegation from an administrator, to you or the app's owner. A name you
-hold nothing on reads `storage_unknown`, whether or not it exists.
+hold nothing on reads `storage_unknown`, whether or not it exists — if an
+administrator created it, ask them to delegate it to you or the app's owner.
 
 **`[jobs.<name>]`** — the only way a job exists (no UI or CLI creates one); it
 versions and rolls back with the code. Names: lowercase letters, digits, inner

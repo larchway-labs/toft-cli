@@ -464,8 +464,12 @@ toft fetch /load --form kind=frs --form file=@frs.csv   # multipart; implies POS
 - Body bounded at `--max-body` (8192; `0` for all); `--timeout` 60s (a
   duration, `200s`). An app that does not answer in time is exit 1, code
   `timeout`, retryable.
+- **A batch app's address** answers 200 with its jobs — each one's schedule,
+  next run and last outcome — and `fetch` exits 0 with a line naming `toft job
+  list`. (An install from before 2026-11-04 answered 503: the refusal below,
+  code `batch`.)
 - **When the platform answers instead of the app** (the gateway's 503 —
-  stopped, locked, building, crashed, a batch app with no pages), `fetch` says
+  stopped, locked, building, crashed), `fetch` says
   *the platform answered 503 in the app's place (<state>)*, exit 1 — never "the
   app answered 503". The code is the gateway's own word: `stopped` (`toft start
   --app <slug>`), `batch` (it runs jobs and serves no pages — `toft job list`),
@@ -844,7 +848,8 @@ path   = "/data/sales"     # optional: default /storage/<name>[/<folder>]
   attached in the console` when the console attached it identically (never
   taken over). Refusals are `problems` with reason `storage_refused` and a code:
   `storage_unknown` (a name you hold nothing on — the same sentence whether or
-  not it exists), `storage_not_attachable_by_owner`,
+  not it exists; if an administrator created it, ask them to delegate it to you
+  or the app's owner), `storage_not_attachable_by_owner`,
   `storage_not_attachable_by_you`, `storage_level_above_ceiling`,
   `storage_requires_person`, `storage_conflicts_console_mapping` (attached in the
   console differently — match it, or have it detached), …. An entry wrong on
