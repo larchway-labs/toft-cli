@@ -217,7 +217,7 @@ hold nothing on reads `storage_unknown`, whether or not it exists.
 versions and rolls back with the code. Names: lowercase letters, digits, inner
 dashes. Parameters are enforced at start, all 400 and not retryable:
 `param_required`, `param_type`, `param_choice`, `param_unknown`; a `default`
-fills an absent one. A job declaring no params takes any. CLI `--param` strings
+fills an absent one. A job declaring no params takes any keys — but `params` is still a JSON object (`"x"`, `[1]` or `5` is `param_type`, declared params or not). CLI `--param` strings
 are coerced to the declared type; a `float` param arrives as a float (`2` and
 `"2"` are `2.0`), defaults included.
 
@@ -330,8 +330,8 @@ Codes worth handling (all `retryable: false` unless noted):
 
 | Area | Codes |
 |---|---|
-| raised by the SDK before any request | `bad_request` — an argument it will not send: blank text, an empty session id or job name, a `jobs.list` status that is not one of the eight run statuses (Node exports them as `RUN_STATUSES`, named and on the default `toft`), a `limit` out of range (Python and Node 1–200; Go and R non-negative), `progress` outside 0–100, `app.can("")`, `access_token("")`, a non-JSON body (NaN included), app data that is not an object (R: anything but a named list), a scratch path outside the scratch root, an unreadable local file. `not_found` — a local file that is not there. `off_platform` — the platform's variables are absent, or a run handle made outside a job. Also `no_viewer`, `would_outlive_request`, `no_recipient`, `no_output` (a write with no output location), `storage_env_invalid` (a `TOFT_STORAGE` that is not JSON or not an array, or an entry without its `name`, `kind` or `access`, in all four; `path` is optional — a store reached by signed URL has none), `not_json` (`output_json()` / `outputJson()` / `OutputJSON` / `job_output(json = TRUE)` on bytes that are not JSON, an output written empty included, in all four — Go's `OutputJSON` answers `false` beside it, `true` only when `v` was filled; no output at all is `None`/`null`/`false`/`NULL`). A role word that is not one — `at_least("superuser")`, `caller_can(h, "")` — is `bad_request` (Go: `AtLeast` panics with that `*toft.Error`, having only a bool to return); `system`, `app` and `unknown` are roles and answer false. Every refusal an SDK raises itself carries a `hint`. Node: a negative or NaN `rateLimitTimeout`; any option a call does not take — `data.set(doc, { if_version })`, `storage(name, { fold })`, `jobs.list({ jobb })`, `accessToken(kind, {…})`, and an options object handed to a call that takes none — `data.get({…})`, `jobs.get(id, {…})`, `caller(h, {…})`, `mounts({…})`, `notify.status(id, {…})`, a run's `cancel`/`refresh`/`logs`/`output`, `progress(p, m, {…})`, `writeOutputJson(v, {…})` — is `bad_request` naming what it does take (a snake_case spelling gets the camelCase name in the hint), and `jobs.list("name")` is `bad_request` — pass `list({ job: "name" })`; `RUN_STATUSES` and `TERMINAL_STATUSES` are read-only (`add` throws). Go adds `write_failed` (a local disk write), `scratch_unavailable`, `entropy_unavailable` |
-| jobs | `queue_full` (429, **retryable**, `retry_after`; its hint is `toft job runs --app <slug>`, naming the app), `wait_timeout` (**retryable**; the run is still going — in Go also a ctx whose deadline passed; a Go ctx cancelled outright is `wait_cancelled`, not retryable), `viewer_anonymous` (403), `act_for_required` (403: cancelling a run a person started that has not finished — only that person may; a finished one answers as a no-op), `job_send_only`, `param_*`, `idempotency_key_reused` (409: the same key with a different job, params or `scheduled_for`), `params_too_large` (413; the body's `limit_bytes`, 65536 — Python `e.body["limit_bytes"]`, Node `err.body.limit_bytes`, Go `e.Body["limit_bytes"]` (a `float64`), R `e$body$limit_bytes`) |
+| raised by the SDK before any request | `bad_request` — an argument it will not send: blank text, an empty session id or job name, a `jobs.list` status that is not one of the eight run statuses (Node exports them as `RUN_STATUSES`, named and on the default `toft`), a `limit` out of range (Python and Node 1–200; Go and R non-negative — the API itself reads a `limit` outside 1–200, 0 included, as its default 50, silently), `progress` outside 0–100, `app.can("")`, `access_token("")`, a non-JSON body (NaN included), app data that is not an object (R: anything but a named list), a Python `data.update()` given anything but a function, a scratch path outside the scratch root, an unreadable local file. `not_found` — a local file that is not there. `off_platform` — the platform's variables are absent, or a run handle made outside a job. Also `no_viewer`, `would_outlive_request`, `no_recipient`, `no_output` (a write with no output location), `storage_env_invalid` (a `TOFT_STORAGE` that is not JSON or not an array, an entry that is not an object, one without its `name`, `kind` or `access`, a `kind` other than `volume`/`store` or an `access` other than `read`/`write`/`full` — in all four, held to one shared vector; `path` is optional — a store reached by signed URL has none), `not_json` (`output_json()` / `outputJson()` / `OutputJSON` / `job_output(json = TRUE)` on bytes that are not JSON, an output written empty included, in all four — Go's `OutputJSON` answers `false` beside it, `true` only when `v` was filled; no output at all is `None`/`null`/`false`/`NULL`). A role word that is not one — `at_least("superuser")`, `caller_can(h, "")` — is `bad_request` (Go: `AtLeast` panics with that `*toft.Error`, having only a bool to return); `system`, `app` and `unknown` are roles and answer false. Every refusal an SDK raises itself carries a `hint`. Node: a negative or NaN `rateLimitTimeout`; any option a call does not take — `data.set(doc, { if_version })`, `storage(name, { fold })`, `jobs.list({ jobb })`, `accessToken(kind, {…})`, and an options object handed to a call that takes none — `data.get({…})`, `jobs.get(id, {…})`, `caller(h, {…})`, `mounts({…})`, `notify.status(id, {…})`, a run's `cancel`/`refresh`/`logs`/`output`, `progress(p, m, {…})`, `writeOutput(d, {…})`, `writeOutputJson(v, {…})`, `newSessionId({…})`, `app.name`/`mode`/`basePath`/`policy`/`capabilities`/`refresh({…})`, `app.can(c, {…})`, `viewer(h, {…})`, `respond(run, req, {…})`, `caller.atLeast(role, {…})`, `Run.fromEnv({…})`, a `Mount`'s `put`/`upload`/`download`/`remove` — is `bad_request` naming what it does take (a snake_case spelling gets the camelCase name in the hint); `run.logs(afterSeq)` takes a whole number from 0 and refuses anything else, an options object included; `notify.email(message, { idempotencyKey })` takes its key in either place, and two different ones are `bad_request`, and `jobs.list("name")` is `bad_request` — pass `list({ job: "name" })`; `RUN_STATUSES` and `TERMINAL_STATUSES` are read-only (`add` throws). Go adds `write_failed` (a local disk write), `scratch_unavailable`, `entropy_unavailable` |
+| jobs | `queue_full` (429, **retryable**, `retry_after`; its hint is `toft job runs --app <slug>`, naming the app; the body's `in_flight` counts queued and running runs together, beside `limit`), `wait_timeout` (**retryable**; the run is still going — in Go also a ctx whose deadline passed; a Go ctx cancelled outright is `wait_cancelled`, not retryable), `viewer_anonymous` (403), `act_for_required` (403: cancelling a run a person started that has not finished — only that person may; a finished one answers as a no-op), `job_send_only`, `param_*`, `idempotency_key_reused` (409: the same key with a different job, params or `scheduled_for`), `params_too_large` (413; the body's `limit_bytes`, 65536 — Python `e.body["limit_bytes"]`, Node `err.body.limit_bytes`, Go `e.Body["limit_bytes"]` (a `float64`), R `e$body$limit_bytes`) |
 | storage | `not_mapped`, `ambiguous_mount`, `not_mounted`, `insufficient_access`, `already_exists`, `not_found`, `not_a_store`, `invalid_name`, `store_uploads_off` (404) |
 | identity / data | `viewer_identity_disabled`, `version_conflict`, `rate_limited` (**retryable**), `too_large` (413: a document over 256 KiB; the body's `limit` is 262144) |
 | integrations and tokens | `<kind>_off` (403: no connection, e.g. `sharepoint_off`, `slack_off`), `<kind>_not_attached` (403, e.g. `email_not_attached`, `slack_not_attached`), `<kind>_disabled`, `<kind>_tokens_off` (403), `unknown_capability` (400: a token kind the install does not offer), `token_too_wide` (409) |
@@ -362,14 +362,17 @@ Go: `toft.App.Self(ctx)` → `AppInfo{ID, Slug, Name, Mode, BasePath, …}`,
 - `mode` is **this workload's** mode, right from the first request.
 - `base_path` equals `BASE_PATH` and is never `""` on a mounted app.
 - `policy` is what an administrator has decided about this app, read-only. The
-  fields an app acts on: `deploys_blocked` (with `blocked_reason`) and
-  `source_allowed` (with `source_reason`) say the next deploy will be refused;
-  `sleeps` with `idle_sleep_minutes` (and `sleep_exemption` when it does not)
+  fields an app acts on: `deploys_blocked` (with `blocked_reason`, present only
+  while blocked) and `source_allowed` (with `source_reason`, present only while
+  not allowed) say the next deploy will be refused;
+  `sleeps` with `idle_sleep_minutes` (and `sleep_exemption`, present only when it does not)
   say whether an idle service is put to sleep; `integrations` lists each one
   attached, whether an administrator switched it off, and where it lands. The
   rest — `platform_memory_limit_mb`, `platform_cpu_limit_millicores`,
-  `max_versions_per_app`, the `*_releases_kept` pair and `releases_kept_conflict`,
-  `log_copy` — is the app page's, carried here as read and not something to
+  `max_versions_per_app`, the `*_releases_kept` pair (`requested_releases_kept`, what
+  the app asked for, and `effective_releases_kept`, what it gets) and
+  `releases_kept_conflict`, `log_copy` (an object: `mode`, `capped`,
+  `dropped_since_start`) — is the app page's, carried here as read and not something to
   branch on.
 - **The answer is cached for the process.** An integration or storage mapping
   an administrator changes reaches the service at its **next deployment** (each
@@ -426,7 +429,7 @@ R `caller_role(headers)`, `caller_can(headers, "editor")`, `viewer(headers)`.
 | `toft.scratch_dir("uploads")` (`scratchDir` / `ScratchDir`) | per app, **wiped on every start, restart and redeploy**. Parts stay inside it: an absolute part, or one whose `..` climbs out, is `bad_request`. Off-platform a private `0700` `toft-scratch-<uid>/<app>` under the temp dir |
 | `toft.session_scratch_dir(sid)` (`sessionScratchDir` / `SessionScratchDir`) | one browser login's corner; `sid` from the `X-Toft-Session` header. The id is hashed; empty is `bad_request` |
 | `toft.new_session_id()` | for anonymous viewers (no header): mint one and keep it in **your own cookie** — never a name starting `toft_`, which the platform strips |
-| `toft.mounts()` | every mapping: `name`, `kind`, `path`, `access`, `folder`, `read_only`, `mounted` (R: list elements; Go: the encoded `Mount`, with `ReadOnly()` / `Mounted()` as methods) |
+| `toft.mounts()` | every mapping: `name`, `kind`, `path`, `access`, `folder`, `read_only`, `mounted` (R: list elements; Go: the encoded `Mount`, with `ReadOnly()` / `Mounted()` as methods; Python: attributes, and `m.to_dict()` for the JSON form) |
 | `toft.storage("reports").path` (`Storage(…).Path`) | a durable volume, resolved by name |
 | `toft.store("reports").put(path, name=None)` (`Store(…).Put(path, name)`) | a file into an object store **mounted here** |
 | `toft.store("reports").upload(path)` · `download(name)` · `url(name, attachment=True)` · `remove(name)` · `list(path)` | the same store over signed URLs — works mounted or not, where the install has a store signer (else `store_uploads_off`) |
@@ -608,11 +611,11 @@ run.succeeded, run.status, run.failure_reason, run.output(), run.output_json(), 
 | | Python | Node | Go | R |
 |---|---|---|---|---|
 | start | `jobs.start(job, params=, idempotency_key=)` | `jobs.start(job, { params, idempotencyKey })` | `Jobs.Start(ctx, job, StartOptions{Params, IdempotencyKey})` | `job_start(job, params =, idempotency_key =)` |
-| respond | `jobs.respond(run, request=)` | `jobs.respond(run, req)` | `Jobs.Respond(w, r, run)` | `job_respond(run, res, req)` (found in the handler's frame when left out) |
+| respond | `jobs.respond(run, request=)` | `jobs.respond(run, req)` | `Jobs.Respond(w, r, run)` | `job_respond(run, res, req)` (found in the handler's frame when left out) — in all four, a run `start` did not return (no id or no status page) is `bad_request` with nothing written |
 | wait | `run.wait(timeout=, headers=)` | `run.wait({ timeoutMs, headers })` | `run.Wait(ctx, WaitOptions{Timeout, Request})` | `job_wait(run, timeout =, request =)` |
 | read | `jobs.get(id)` · `jobs.list(job=, status=, limit=)` · `run.refresh()` | `get` · `list({ job, status })` · `refresh()` | `Get` · `List(ctx, ListOptions{})` · `Refresh` | `job_get` · `job_list` · `job_refresh` |
 | a person's runs | `viewer(h).jobs.mine(job=)` | `viewer(h).jobs.mine({ job })` | `me.Jobs.Mine(ctx, ListOptions{})` | `job_mine(req, job =)` |
-| output, logs, stop | `output()` · `output_json()` · `logs()` · `tail()` · `cancel()` | `output()` · `outputJson()` · `logs()` · `tail()` · `cancel()` | `Output` · `OutputJSON(ctx, &v)` · `Logs` · `Tail` · `Cancel` | `job_output(run, json =)` · `job_logs` · `job_cancel` |
+| output, logs, stop | `output()` · `output_json()` · `logs()` · `tail()` · `cancel()` | `output()` · `outputJson()` · `logs(afterSeq)` · `tail()` · `cancel()` | `Output` · `OutputJSON(ctx, &v)` · `Logs` · `Tail` · `Cancel` | `job_output(run, json =)` · `job_logs` · `job_cancel` |
 
 A run carries `id`, `job`, `status` (`queued`, `running`, `succeeded`, `failed`,
 `timed_out`, `out_of_memory`, `cancelled`, `skipped`), `started_by` (`app`,
@@ -625,8 +628,10 @@ path a person's key opens), `deduplicated` (always present on a start's
 answer, true or false, and in `respond()`'s 202 body), `has_output` (an output
 exists to fetch — false for none and for one expired), `failure_stage` on a
 failure before the job's own command ran (`image_pull`, `runtime_version`,
-`artifact_fetch`, `build`, `callback_unreachable`; `app_exec` is the command
-itself), `cpu_throttled_seconds` (time held at the CPU limit, absent where the
+`artifact_fetch`, `build`, `callback_unreachable`; `app_exec` when the command
+could not be started or was stopped before it finished — a command that ran and
+exited non-zero has no `failure_stage`, and `exit_code` and `failure_reason` say
+it), `cpu_throttled_seconds` (time held at the CPU limit, absent where the
 cgroup keeps no counter), `execution_mode` (`shared` or `isolated`) and
 `definition_id` (the job definition's id — key on `job`, which is stable across
 deploys). A person's reads (`toft job runs`) add `started_by_user`, who started

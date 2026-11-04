@@ -141,7 +141,8 @@ refusal — run it once before the first deploy. `--json` is the install's
   (also when `--json` comes anywhere on the line), `no_command` (a bare `toft
   --json`), `unknown_flag`, `bad_flag` (a flag written wrong, a switch given a
   separate value), `unexpected_argument` (a stray word, or two apps named),
-  `missing_argument` (a required word absent), `conflicting_flags`,
+  `missing_argument` (a required word absent — a flag where a subcommand goes,
+  `toft env --json`, is this, with the subcommand in the hint), `conflicting_flags`,
   `confirmation_required` (unattended, no `--yes`), `cancelled` (answered no),
   `file_exists` (a download onto a file, without `--force`), `is_a_directory` (`fetch -o` a folder), `invalid_source`
   (`logs --source`), `invalid_url`, `unreadable_file`, `empty_input` (nothing on
@@ -317,6 +318,9 @@ frames, then one result object at the end. Parse line by line. **A list is
 one document per row, never an array** — `apps`, `deployments list`, `env list`, `job list`, `job
 runs`, `events`, `store list`, a `store cp`/`mv` batch's items, `skill --json`
 — and an empty list is no lines at all: `toft apps --json | jq -s length`.
+`store list` is `toft store ls` naming no store; inside one (`toft store ls drills-drop`,
+`… drills-drop/backup`) the answer is one `{folders, objects}` document, folders and
+objects being two kinds of row.
 
 A successful result may carry **`warnings`** (an unread `toft.toml` table, a
 secret-looking file). Absent means none — or an install too old to report them.
@@ -589,7 +593,9 @@ result object writes one:
   503 meaning "not configured here" is `false`); for the client's own, `true`
   only when the install was unreachable (not when the host does not resolve). A
   proxy's 502/503/504 page is `unreachable`, exit 4.
-- `hint` is the next step — act on it. The sentence also goes to stderr.
+- `hint` is the next step — act on it. The sentence also goes to stderr — a
+  failed `deploy --json` too, whose document's `hint` names `toft logs --deploy
+  <id>` when the build log has the rest.
 - **No second document** for a failed deploy, `fetch`, `check` or `--verify`:
   the result document is the answer and the exit code says it failed. The
   exceptions are a fetch the platform answered in the app's place (the result,
@@ -800,8 +806,10 @@ Inside the app and its jobs, attached storage is in `TOFT_STORAGE` (JSON: name,
 kind, access, folder, path; absent when none). Read the path from there or the
 SDK's `mounts()`: on a cluster it is `/storage/<name>` by default, but without
 a cluster it is a folder under the app's own directory —
-`…/apps/<app-id>/storage/storage/<name>[/<folder>]`, the resource's folder inside
-the app's `storage/` (the doubled `storage` is expected). Never build the path
+`…/apps/<app-id>/storage/<mapping path>`, the mapping's path kept whole under
+the app's `storage/`: the default `/storage/<name>[/<folder>]` lands at
+`…/storage/storage/<name>` (the doubled `storage` is expected), and a mapping
+with `path = "/data/cli"` at `…/storage/data/cli`. Never build the path
 yourself; read it.
 
 **Every path prints as `toft://<store>/<path>`** (folders end in `/`), and every
