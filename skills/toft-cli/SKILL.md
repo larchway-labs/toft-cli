@@ -14,7 +14,8 @@ loop is: write files, `toft deploy`, read what the platform says, fix, repeat.
 your PATH**, which describes exactly the commands it has; if this file and
 `toft --help` disagree, trust that. `toft skill toft-sdk` is the app-side SDK
 skill. `toft skill install` (the installer runs it) puts pointers to both in
-`~/.claude/skills` and `~/.agents/skills`, so upgrading `toft` upgrades them.
+`~/.claude/skills` and `~/.agents/skills`, so upgrading `toft` upgrades them;
+with `--json` it prints each `SKILL.md` it wrote as a JSON string, one per line.
 Every command takes `--help`.
 
 ## Installing
@@ -255,6 +256,7 @@ needed. Never creates an app: no link is exit 2 `no_app`, naming `toft link
     changed variable reaches it at the next deploy, with a `note` saying so.
   - A **static** app prints `unchanged` (no process). `toft start` of a stopped
     static app prints `started`.
+  - An app that has never deployed is exit 3 `no_release` — deploy it first.
 - **`toft stop`** of a stopped app says `already stopped` (`"changed": false`).
 
 ### Finding apps: `toft apps`, `toft top`
@@ -292,7 +294,13 @@ hint.
   (`secret_in_bundle`) are among them, each with its `path` — and a deploy's or
   a create's `--json` result gives the same two the same way, `--no-watch`
   included. A `go.work` naming a folder that ships nothing (a git-ignored
-  `.toft/sdk-go`) is `go_work_dir_excluded`, which the build would fail on. The answer's
+  `.toft/sdk-go`) is `go_work_dir_excluded`, which the build would fail on — the
+  install says it too, in its check and in a deploy's warnings, for a tree sent
+  by any client, and everywhere it is `{code, table: "go.work", path: "<dir>",
+  message}` (read the folder from `path`). A `[notebook]` table's problems are
+  `invalid_notebook_file` (missing, absolute, outside the tree, or not an
+  `.ipynb`/`.qmd`/`.Rmd`) and `invalid_notebook_engine`, listed together; a
+  deploy fails on them with `reason: manifest_invalid`. The answer's
   `restart` and `render` carry `stored`, the schedule as the deploy records it.
 - A `toft.toml` that does not parse is a check problem too — `reason:
   manifest_invalid`, `code: manifest_syntax`, the line in the message — exit 1.
@@ -413,8 +421,10 @@ toft deps --json | jq '.refused.findings[] | {package, version, advisory_id, sev
 with or without a `renv.lock`: the release lists at least the R packages Toft
 installs, and no advisory feed covers CRAN (without a `renv.lock` the app's own
 `library()` packages are neither installed nor listed — commit one);
-`not_enumerable` only for an R release built before Toft recorded installed
-packages (a redeploy replaces it), `unresolved` when the build's
+`not_enumerable` for an R release built before Toft recorded installed
+packages (a redeploy replaces it) and for an R app with nothing recorded yet —
+one whose first deploy has not succeeded, which `toft deps` shows as "Nothing is
+serving yet.", `unresolved` when the build's
 packages could not be listed, `no_dependencies` for a static app or one whose
 manifest names none — an empty `requirements.txt`, a Go module with no requirements,
 a Node app with no packages,
@@ -570,9 +580,14 @@ timing, as the install recorded it) beside the status fields.
 - **`toft rollback`** names the release it restored (`deployment_id` under
   `--json`, on the result and on every progress frame; the platform's own
   short-lived rollback row is `watched_id` on those frames). A rollback across
-  a base-path change is rebuilt, so its row stays in `toft deployments`, newest
-  of all, with `restored_from` naming the release it restored — the next
-  `rollback` goes back from that release, never forward to the one it left.
+  a base-path change (a rename, a hostname switch) is rebuilt: its row stays in
+  `toft deployments`, newest of all, with `restored_from` naming the original
+  release, `deployment_id` is that new row, and the text says it was rebuilt. A
+  rename or hostname switch rebuilds the serving release the same way
+  (`triggered_by: move`, `restored_from` that release). Either way the next
+  `rollback` goes back from the release now serving, never forward to the one
+  it left. A plain rollback writes no lasting row — `restored_from` is only on
+  rebuilt and moved rows.
   Past the oldest kept release it is exit 2 `nothing_older`.
 - **How far back you can roll is what retention keeps.** By default an app keeps
   **3 versions, the serving one included** — so two to roll back to. The owner
@@ -771,7 +786,8 @@ A static app runs no jobs, and a static deploy refuses `[jobs]`.
 
 **Pausing** a job's schedule until the next deploy: the app's Automation tab, or
 `PATCH /api/v1/apps/{id}/jobs/{name}` with `{"enabled": false}` — not
-`toft.toml`.
+`toft.toml`. It pauses the *schedule* only: `toft job run` still runs the job,
+and on an on-demand job it changes nothing (`job list` shows no pause).
 
 ### Scheduled restarts and re-renders
 
