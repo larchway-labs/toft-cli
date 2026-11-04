@@ -541,7 +541,8 @@ never written. `update` re-reads on a version conflict (5 attempts,
 then `version_conflict`) and waits out `rate_limited` without spending
 attempts — Python, Node and Go for up to 300 s in all, honoring `Retry-After`
 (Node `update(fn, { rateLimitTimeout })`, Go `toft.RateLimitTimeout`); R
-retries once, as every R call does. Past that it raises
+waits it out for each call's 30 s, as every R call does, with no longer
+budget. Past that it raises
 `rate_limited` itself. Go `Data.Get/Read/Set/SetIf/Update/Clear/ClearIf(ctx…)`;
 R `app_data_get()`, `app_data_read()`, `app_data_set(value, if_version)`,
 `app_data_update(fn)`, `app_data_clear(if_version = NULL)` (`TRUE` when there was
