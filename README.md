@@ -197,7 +197,7 @@ If a step fails, `toft events` says what the platform noticed.
 | `0` | It worked |
 | `1` | The platform did the thing and it failed — a failed build, a refused bundle |
 | `2` | Usage or configuration: no app linked, a bad flag, a name that does not exist or is already taken, a path no route on the install matches, a prompt that could not be asked, or an app an administrator has locked |
-| `3` | Not authenticated, or refused — including a refusal by the app's state, such as rerunning a run that has not finished or deleting the serving deployment. If it says your account is a viewer, creating and deploying apps needs the publisher role — ask an administrator for it |
+| `3` | Not authenticated, or refused — including a refusal by the app's state, such as rerunning a run that has not finished or deleting the serving deployment. If it says your account is a viewer, creating an app needs the publisher role — ask an administrator for it; deploying to an existing app needs editor on that app — ask its owner |
 | `4` | Could not reach the install |
 
 ## For coding agents
