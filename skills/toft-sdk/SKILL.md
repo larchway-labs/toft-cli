@@ -24,6 +24,10 @@ env, logs, jobs) is the **toft-cli** skill.
   path, which they expect.
 - **Links, form actions and asset URLs carry `BASE_PATH`.** A root-absolute
   `/styles.css` asks the *platform*, not you, and 404s.
+- **Frameworks that read the mount point report the full path.** FastAPI and
+  Starlette are told it as `root_path`, so `request.url.path` includes
+  `/apps/<slug>` — build links from it as they are, without adding `BASE_PATH`
+  again; routes still match the stripped path.
 - **Redirects need not.** The proxy prefixes a root-relative `Location: /done`
   on the way out (Next.js included) and leaves one that already carries it alone.
 - **Anything else is an environment variable** someone sets on the app's
@@ -71,8 +75,11 @@ no process behind the page, whatever a chunk prints is published, and a re-rende
 is a deploy (or a `[render]` schedule). The render is a build step, not a
 workload, so an SDK call from a chunk or cell answers `off_platform` — put
 platform work in a job. Several root candidates are refused,
-named; pick one with `[notebook] file = "reports/weekly.qmd"` (also reaches a
-subdirectory). `[notebook] engine` is `nbconvert`, `quarto`, `knitr` or `jupyter`.
+named; pick one with `[notebook] file = "reports/weekly.qmd"` or
+`"reports/weekly.Rmd"` (also reaches a subdirectory). `[notebook] engine` is
+`nbconvert`, `quarto`, `knitr` or `jupyter`; an `.Rmd` takes `knitr` or
+nothing. An `.Rmd` knits in its own folder, as RStudio's Knit button does, so
+its relative paths start there.
 
 Build traps:
 
@@ -94,7 +101,8 @@ R:
 
 - **Commit `renv.lock`** (`renv::init()`, `renv::snapshot()`). Without it the
   build installs nothing and says so (`toft check` warns `no_renv_lock`): a
-  Shiny or plumber app dies at its first `library()` (`not_ready`), and an R
+  Shiny or plumber app dies at its first `library()` (`not_ready`), a batch
+  app's jobs each fail at theirs, and an R
   Markdown or Quarto document fails the deploy at the render step, naming the
   missing package.
 - Packages come from a binary repository; one without a binary for the
@@ -150,7 +158,7 @@ DB_PASSWORD = { sensitive = true } # a secret: never a default
 
 [[storage]]                       # storage an administrator already created
 name   = "sales-data"
-access = "full"                   # read | write | full; left out: what the storage can serve
+access = "full"                   # read | write | full; left out: read, or what its storage root serves
 folder = "2026"                   # optional: one folder of the resource
 path   = "/data/sales"            # optional: default /storage/<name>[/<folder>]
 
@@ -195,8 +203,9 @@ fetch that toolchain, and fails only if it cannot.
 
 **`[env]`** — each deploy adds a declared variable the app lacks, with its
 default and flag; it never changes or removes an existing one, and skips a name
-a credential supplies. An unfilled variable arrives as `""`; a secret reads *not
-set* until filled in. Refusals: a secret with a default `sensitive_default`
+a credential supplies. An unfilled variable arrives in the app as `""`, a secret
+included — `toft env` and the console show an unfilled secret as *not set* until
+it is filled in. Refusals: a secret with a default `sensitive_default`
 (hint: `toft env set --from-file`); any other shape `env_entry_invalid`; a bad
 name `invalid_env_name`; a platform name `reserved_env_name`.
 
@@ -235,6 +244,10 @@ are coerced to the declared type; a `float` param arrives as a float (`2` and
   Runs somebody starts are never held behind scheduled ones.
 - `notify` alerts owners per failed (`failures`) or finished (`always`) run;
   skipped and cancelled say nothing.
+- A job's `command` runs through `/bin/sh -c`, so the shell's quoting and
+  expansion apply: in `Rscript -e "cat(toft::current_run()$trigger)"` the
+  `$trigger` is expanded (to nothing) before R sees it — use single quotes
+  inside, or `args`. `args` is never passed through a shell.
 - A Go job runs the built binary and dispatches on its arguments:
   `command = "./toft-app job nightly-report"`, or `args = ["job",
   "nightly-report"]` — on a `[batch]` Go app too. `args` are the binary's
@@ -250,7 +263,8 @@ document (marimo included) is `render_not_a_document`.
 
 **`[batch]`** — a program with no web server: `[batch]` (plus
 `language = "python" | "node" | "go" | "r"` if ambiguous). Dependencies install,
-nothing starts, the work is its `[jobs]`; Restart/Stop answer `no_service`.
+nothing starts, the work is its `[jobs]`; Restart/Stop answer `no_service`,
+and turning viewer identity on is 409 `batch_app` — no page, so no viewer.
 `[batch]` with `[static]` is refused.
 
 ## The SDK
@@ -275,7 +289,9 @@ Off-platform, calls that need the platform raise `off_platform` naming the
 missing variable — **there is no dry-run mode**. `scratch_dir` works anywhere.
 To compile or lint before the first deploy (in Go, `go build` fails on the
 import without it), run `toft sdk vendor` — it writes `.toft/sdk-<lang>/` (and a
-`go.work` for Go; ignore both in `.gitignore` or neither). Details: toft-cli skill.
+`go.work` for Go; ignore both in `.gitignore` or neither — `toft check` warns
+`go_work_dir_excluded` when only the folder is). For R it is a package source
+tree: `R CMD INSTALL .toft/sdk-r`, then `library(toft)`. Details: toft-cli skill.
 
 ### Spelling across languages
 
@@ -316,8 +332,12 @@ Go: `toft.AsError(err)`, or `errors.As` to `*toft.QueueFullError` (`InFlight`,
 R: a request that never got an answer is a `toft_error` too (`code` `""`,
 `retryable` TRUE), not curl's own condition.
 `retryable` falls back to 429/5xx only when the platform said nothing. Log the
-`hint`. The SDK retries once only for a request that never reached a handler; a
-retryable 4xx is yours to loop on, honoring `retry_after` / `retryAfter` /
+`hint`. The SDK resends a request once on its own only when it cannot have
+reached a handler — a 429 from the rate limiter, a connection that never opened
+— or when sending it twice is harmless: a GET, or a write carrying an
+`Idempotency-Key`, after a 5xx or a dropped connection. An unkeyed POST, PUT or
+DELETE that got a 5xx is not resent (still `retryable`: yours to decide), and a
+timeout is never resent. A retryable 4xx is yours to loop on, honoring `retry_after` / `retryAfter` /
 `RetryAfter`.
 
 **A refusal the SDK makes itself is always coded and never retryable** — a bad
@@ -326,13 +346,15 @@ failed in transport, never reaching the platform, is uncoded and retryable, so
 an agent's retry loop cannot spin on a local mistake. An **object store** that
 answers a signed URL with an error is coded too — `output_unwritable` (writing
 a run's output), `output_unreadable` (reading it back), `store_refused` (any
-`store` call) — with its `status`, and retryable only for a 429 or 5xx.
+`store` call) — with its `status`, and retryable only for a 429 or 5xx. A 2xx
+answer whose body is not JSON (a web page from a proxy or sign-in page in
+front of the install) is `not_toft`, with its `status`, in all four.
 
 Codes worth handling (all `retryable: false` unless noted):
 
 | Area | Codes |
 |---|---|
-| raised by the SDK before any request | `bad_request` — an argument it will not send: blank text, an empty session id or job name, a `jobs.list` status that is not one of the eight run statuses (Node exports them as `RUN_STATUSES`, named and on the default `toft`), a `limit` out of range (Python and Node 1–200; Go and R non-negative — the API itself reads a `limit` outside 1–200, 0 included, as its default 50, silently), `progress` outside 0–100, `app.can("")`, `access_token("")`, a non-JSON body (NaN included), app data that is not an object (R: anything but a named list), a Python `data.update()` given anything but a function, a scratch path outside the scratch root, an unreadable local file. `not_found` — a local file that is not there. `off_platform` — the platform's variables are absent, or a run handle made outside a job. Also `no_viewer`, `would_outlive_request`, `no_recipient`, `no_output` (a write with no output location), `storage_env_invalid` (a `TOFT_STORAGE` that is not JSON or not an array, an entry that is not an object, one without its `name`, `kind` or `access`, a `kind` other than `volume`/`store` or an `access` other than `read`/`write`/`full` — in all four, held to one shared vector; `path` is optional — a store reached by signed URL has none), `not_json` (`output_json()` / `outputJson()` / `OutputJSON` / `job_output(json = TRUE)` on bytes that are not JSON, an output written empty included, in all four — Go's `OutputJSON` answers `false` beside it, `true` only when `v` was filled; no output at all is `None`/`null`/`false`/`NULL`). A role word that is not one — `at_least("superuser")`, `caller_can(h, "")` — is `bad_request` (Go: `AtLeast` panics with that `*toft.Error`, having only a bool to return); `system`, `app` and `unknown` are roles and answer false. Every refusal an SDK raises itself carries a `hint`. Node: a negative or NaN `rateLimitTimeout`; any option a call does not take — `data.set(doc, { if_version })`, `storage(name, { fold })`, `jobs.list({ jobb })`, `accessToken(kind, {…})`, and an options object handed to a call that takes none — `data.get({…})`, `jobs.get(id, {…})`, `caller(h, {…})`, `mounts({…})`, `notify.status(id, {…})`, a run's `cancel`/`refresh`/`logs`/`output`, `progress(p, m, {…})`, `writeOutput(d, {…})`, `writeOutputJson(v, {…})`, `newSessionId({…})`, `app.name`/`mode`/`basePath`/`policy`/`capabilities`/`refresh({…})`, `app.can(c, {…})`, `viewer(h, {…})`, `respond(run, req, {…})`, `caller.atLeast(role, {…})`, `Run.fromEnv({…})`, a `Mount`'s `put`/`upload`/`download`/`remove` — is `bad_request` naming what it does take (a snake_case spelling gets the camelCase name in the hint); `run.logs(afterSeq)` takes a whole number from 0 and refuses anything else, an options object included; `notify.email(message, { idempotencyKey })` takes its key in either place, and two different ones are `bad_request`, and `jobs.list("name")` is `bad_request` — pass `list({ job: "name" })`; `RUN_STATUSES` and `TERMINAL_STATUSES` are read-only (`add` throws). Go adds `write_failed` (a local disk write), `scratch_unavailable`, `entropy_unavailable` |
+| raised by the SDK before any request | `bad_request` — an argument it will not send: blank text, an empty session id or job name, a `jobs.list` status that is not one of the eight run statuses (Node exports them as `RUN_STATUSES`, named and on the default `toft`), a `limit` out of range (Python and Node 1–200; Go and R non-negative — the API itself reads a `limit` outside 1–200, 0 included, as its default 50, silently), `progress` outside 0–100, `app.can("")`, `access_token("")`, a non-JSON body (NaN included), app data that is not an object (R: anything but a named list), a Python or Node `data.update()` given anything but a function, a scratch path outside the scratch root, an unreadable local file or a directory where a file was wanted, an object name or a source path that is not a string, a `wait()` timeout that is negative, NaN or infinite or a poll interval that is not positive (all four, a finished run included; 0 is a valid timeout), a logs cursor that is negative or not a whole number (all four), a `data.update()` `attempts` that is not a whole number from 1 (Python, Node). `not_found` — a local file that is not there (all four). `off_platform` — the platform's variables are absent, or a run handle made outside a job. Also `no_viewer`, `would_outlive_request`, `no_recipient`, `no_output` (a write with no output location), `storage_env_invalid` (a `TOFT_STORAGE` that is not JSON or not an array, an entry that is not an object, one without its `name`, `kind` or `access`, a `kind` other than `volume`/`store` or an `access` other than `read`/`write`/`full` — in all four, held to one shared vector; `path` is optional — a store reached by signed URL has none), `not_json` (`output_json()` / `outputJson()` / `OutputJSON` / `job_output(json = TRUE)` on bytes that are not JSON, an output written empty included, in all four — Go's `OutputJSON` answers `false` beside it, `true` only when `v` was filled; no output at all is `None`/`null`/`false`/`NULL`). A role word that is not one — `at_least("superuser")`, `caller_can(h, "")` — is `bad_request` (Go: `AtLeast` panics with that `*toft.Error`, having only a bool to return); `system`, `app` and `unknown` are roles and answer false. Every refusal an SDK raises itself carries a `hint`. Node: a negative or NaN `rateLimitTimeout`; any option a call does not take — `data.set(doc, { if_version })`, `storage(name, { fold })`, `jobs.list({ jobb })`, `accessToken(kind, {…})`, and an options object handed to a call that takes none — `data.get({…})`, `jobs.get(id, {…})`, `caller(h, {…})`, `mounts({…})`, `notify.status(id, {…})`, a run's `cancel`/`refresh`/`logs`/`output`, `progress(p, m, {…})`, `writeOutput(d, {…})`, `writeOutputJson(v, {…})`, `newSessionId({…})`, `app.name`/`mode`/`basePath`/`policy`/`capabilities`/`refresh({…})`, `app.can(c, {…})`, `viewer(h, {…})`, `respond(run, req, {…})`, `caller.atLeast(role, {…})`, `Run.fromEnv({…})`, a `Mount`'s `put`/`upload`/`download`/`remove` — is `bad_request` naming what it does take (a snake_case spelling gets the camelCase name in the hint); `run.logs(afterSeq)` takes a whole number from 0 and refuses anything else, an options object included; `notify.email(message, { idempotencyKey })` takes its key in either place, and two different ones are `bad_request`, and `jobs.list("name")` is `bad_request` — pass `list({ job: "name" })`; `RUN_STATUSES` and `TERMINAL_STATUSES` are read-only (`add` throws). Go adds `write_failed` (a local disk write), `scratch_unavailable`, `entropy_unavailable` |
 | jobs | `queue_full` (429, **retryable**, `retry_after`; its hint is `toft job runs --app <slug>`, naming the app; the body's `in_flight` is the runs waiting in the queue, beside `limit`, the install's `max_queued_runs_per_app` — runs already running do not count against it), `wait_timeout` (**retryable**; the run is still going — in Go also a ctx whose deadline passed; a Go ctx cancelled outright is `wait_cancelled`, not retryable), `viewer_anonymous` (403), `act_for_required` (403: cancelling a run a person started that has not finished — only that person may; a finished one answers as a no-op), `job_send_only`, `param_*`, `idempotency_key_reused` (409: the same key with a different job, params or `scheduled_for`), `params_too_large` (413; the body's `limit_bytes`, 65536 — Python `e.body["limit_bytes"]`, Node `err.body.limit_bytes`, Go `e.Body["limit_bytes"]` (a `float64`), R `e$body$limit_bytes`) |
 | storage | `not_mapped`, `ambiguous_mount`, `not_mounted`, `insufficient_access`, `already_exists`, `not_found`, `not_a_store`, `invalid_name`, `store_uploads_off` (404) |
 | identity / data | `viewer_identity_disabled`, `version_conflict`, `rate_limited` (**retryable**), `too_large` (413: a document over 256 KiB; the body's `limit` is 262144) |
@@ -340,7 +362,8 @@ Codes worth handling (all `retryable: false` unless noted):
 | notify | `no_recipient`, `bad_recipient` (400: an address the platform will not send to), `too_many_recipients`, `too_large` (413: a message or attachment over the limit; the hint names the limit), `destination_not_allowed` (400: a `channel`, folder or other destination field, named with the integration it was sent to — the app's owners choose it on the Integrations tab), `sender_not_allowed` (400: `from`, `reply_to` or headers on an email), `unknown_kind` (400: `notify.send` of a kind that is not one — notify's own code, tokens say `unknown_capability`). Node and Python raise the two `_not_allowed` codes themselves, before any request (`channel`, `folder`, `url`, `routingKey`/`routing_key`…; `from` — Python `from_` —, `replyTo`/`reply_to`, `headers`), and any other option a call does not take is `bad_request` — on every Node call, and on Python's notify calls, never an uncoded `TypeError` |
 | redirects | `unexpected_redirect` (R; others say `unexpected redirect from <path>`) |
 
-Every call gives up after 30 s (object-store transfers after 5 min) and follows
+Every call gives up after 30 s in all, the resend included (object-store
+transfers after 5 min), and follows
 no redirect. **Every call, in all four languages, tries a `rate_limited` refusal
 once more** after the `Retry-After` it carried (a second refusal is raised), so a
 burst of calls is paced rather than refused: past the burst each call takes about
@@ -410,13 +433,17 @@ R `caller_role(headers)`, `caller_can(headers, "editor")`, `viewer(headers)`.
   reads true. (R has `caller_role()` and `caller_can()` only.)
 - **`who`** answers `None` for an anonymous visitor, an API key, or a request
   with no act-for header at all (a health check, a job). It raises
-  only `viewer_identity_disabled` — a signed-in viewer on an app whose
-  administrator has not turned viewer identity on. Cached ~60 s. Node: an
+  `viewer_identity_disabled` — a signed-in viewer on an app whose
+  administrator has not turned viewer identity on — or `act_for_invalid`
+  (401) when the act-for header on the request is not one Toft signed for this
+  app, which only a forged or replayed header produces. Cached ~60 s. Node: an
   anonymous `Viewer` prints as `[Viewer: an anonymous visitor; nobody is signed in]`.
 - `role` is what the person may do to *this deployment in Toft*, not domain
-  authority — put invoice rules on groups. `is_admin` is separate: an
-  administrator has effective ownership of every app, so `role == "owner"` alone
-  grants every administrator. `email` is `None` on a public app.
+  authority — put invoice rules on groups. `is_admin` is separate: `role`
+  comes from ownership and grants alone, so an administrator with no grant on
+  this app reads as `viewer` with `is_admin` true. Gate an administrator in with
+  `role == "owner" or is_admin`; `at_least("editor")` / `caller_can()` will not
+  let one through. `email` is `None` on a public app.
 - **An API key carries its owner's role but no viewer.** The gateway signs the
   key owner's role onto the request — `caller()` reports it (`owner` for the
   owner's key) with `is_person` and `signed_in` true, meaning *a role on the
@@ -457,13 +484,14 @@ absolute or has a `.` or `..` segment is `invalid_name`, in all four.
 **A name not mapped to this app is `not_mapped`**, listing what is — in every
 language, for every operation (Go: each method of the zero `Mount` that
 `Store` returns beside the error — and the volume's `Mount` it returns beside
-`not_a_store` answers `not_a_store` to every signed-URL method, while `Put` — a copy onto the mount — copies into a mounted volume, as `put()`/`store_put()` do in the other three; R: every `store_*()` given that name; the
+`not_a_store` answers `not_a_store` to every signed-URL method, while `Put` — a copy onto the mount — copies into a mounted volume, as `put()`/`store_put()` do in the other three; R: every `store_*()` given that name but `store_put()`, which copies onto the mounted volume; the
 platform's own `store_not_mapped` is reported as `not_mapped`). The fix is a
 mapping on the app's Storage tab by an administrator, or a `[[storage]]` entry
 in `toft.toml` from someone who may attach it — the SDK's sentence names only
 the first. Off the platform (none of `TOFT_API_URL`, `TOFT_APP_ID`,
-`TOFT_RUN_ID`, `TOFT_SCRATCH_DIR` set, and no `TOFT_STORAGE`) `storage()` and
-`store()` raise `off_platform` instead, in all four; set `TOFT_STORAGE` to stand
+`TOFT_RUN_ID`, `TOFT_SCRATCH_DIR` set, and `TOFT_STORAGE` unset or blank)
+`storage()` and `store()` raise `off_platform` instead, in all four — a
+`TOFT_STORAGE='[]'` is a platform that mapped nothing, `not_mapped`; set `TOFT_STORAGE` to stand
 a mount in locally.
 
 R: `scratch_dir()` takes no argument and is not storage. A `mounts()` entry is a
@@ -598,8 +626,9 @@ progress, queue position, outcome — with no app code. Anything else gets `202`
 **`wait()` is for scripts, notebooks and job-to-job.** Every proxied request
 carries `X-Toft-Request-Deadline` (five minutes by default); a `wait()` inside a
 request with no timeout, or one past the deadline, is refused at once with
-`would_outlive_request`. A run that has already finished is exempt: its wait
-returns it at once. The SDK sees the request through `viewer(headers)`, an
+`would_outlive_request`. A run that had already finished when the handle was
+last read is exempt: its wait returns it at once. A handle read while the run
+was still going is refused all the same — read it again (`get`) first. The SDK sees the request through `viewer(headers)`, an
 explicit `headers=` on the wait, or Flask's current request. A wait rides out
 `rate_limited`. `respond` takes the run `start()` returned — a job name or a run
 id is `bad_request`.

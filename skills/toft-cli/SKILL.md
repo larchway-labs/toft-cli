@@ -107,8 +107,11 @@ toft api POST apps/<id>/lock --data '{"message":"…"}' --session   # the field 
 toft fetch / --session        # the app sees a signed-in person
 ```
 
-`--session` never falls back to the key. When the session has ended (its
-lifetime, or the person's role or groups changed), it is exit 3 / a 401 whose
+`--session` never falls back to the key. The session slides like a browser's:
+each `--session` command renews it, and it ends after the install's idle window
+with no use (30 minutes by default) or its absolute lifetime from sign-in (8 hours
+by default) — both are Admin → Settings. When the session has ended (either of
+those, or the person's role or groups changed), it is exit 3 / a 401 whose
 hint names `toft login --password-stdin <install>` (`session_expired`; `no_session`
 when none was stored). A password sign-in answered
 with a redirect is refused (exit 3) and names the address — sign in there if it
@@ -147,7 +150,9 @@ refusal — run it once before the first deploy. `--json` is the install's
   `file_exists` (a download onto a file, without `--force`), `is_a_directory` (`fetch -o` a folder), `invalid_source`
   (`logs --source`), `invalid_url` (also a `TOFT_URL` or `--install` that is
   not one), `unreadable_file`, `empty_input` (nothing on stdin, `env set
-  --from-file -` included), `invalid_limit` (`job runs --limit` below 1),
+  --from-file -` and `fetch --data @-` included), `needs_personal_credential`
+  (`apps --mine` with a deploy key), `no_agent_folder` (`skill install` with no
+  `~/.claude` or `~/.agents` — name one with `--dir`), `invalid_limit` (`job runs --limit` below 1),
   `invalid_jobs` (`-j` below 1), `unknown_language` (`sdk vendor` in a tree it
   cannot read a language from — pass `--lang`), `invalid_duration` (`--since`, `--timeout`, `--within`…),
   `invalid_time`, `invalid_param` (a `--param` not written `k=v`),
@@ -201,7 +206,10 @@ object, `.app.id`.)
   `source_unavailable`, before anything is created.
 - **With a deploy key, `--owner-group <name|id>` is required** (`toft api GET
   groups` lists them): without it exit 2 `owner_group_required`, before the
-  upload; an unknown name is exit 2 `not_found`. A personal key may name one
+  upload; an unknown name is exit 2 `not_found`. A group the app could not be
+  owned by is refused, hinted: `owner_group_empty` (no members),
+  `owner_group_no_eligible_member`, `owner_group_mapped`; a user owner that
+  cannot own is `owner_not_found`, `owner_is_viewer` or `owner_user_locked`. A personal key may name one
   too, and the group owns the app instead of you.
 - Whatever `toft check` would refuse, create refuses at the upload with the same
   code; **a refused create leaves no app and claims no slug**. A create that
@@ -267,7 +275,7 @@ codes are `manifest_syntax` (the file does not parse; the line is named),
 `invalid_schedule`, `invalid_timezone`, `invalid_overlap`, `invalid_notify`,
 `invalid_expect_within`, `invalid_param`, `batch_and_static`, `removed_key`,
 `sensitive_default`, `env_entry_invalid`, `invalid_static` (a `[static]` root
-or entry this tree does not hold — `field: static.root`)…, and `manifest_invalid` itself only
+or entry this tree does not hold — `field: static.root` or `static.entry`)…, and `manifest_invalid` itself only
 for what has no finer code; an unsatisfiable pin is `runtime_version`, with a
 hint.
 
@@ -280,7 +288,9 @@ hint.
   (e.g. `manifest_unread`) and, for a `toft.toml` key, its `table`. A skipped
   `.env` (`env_file_skipped`) and a secret-looking file that ships
   (`secret_in_bundle`) are among them, each with its `path` — and a deploy's or
-  a create's `--json` result gives the same two the same way. The answer's
+  a create's `--json` result gives the same two the same way, `--no-watch`
+  included. A `go.work` naming a folder that ships nothing (a git-ignored
+  `.toft/sdk-go`) is `go_work_dir_excluded`, which the build would fail on. The answer's
   `restart` and `render` carry `stored`, the schedule as the deploy records it.
 - A `toft.toml` that does not parse is a check problem too — `reason:
   manifest_invalid`, `code: manifest_syntax`, the line in the message — exit 1.
@@ -335,9 +345,10 @@ Beside them, **`warning_details`** gives each coded warning its `code`
 (`go_toolchain_fetched`, `node_version_unread`, `manifest_unread`), as `toft
 check` does.
 
-**Read `reason` first.** A failed result carries the message, `reason`, the
-refusal's own `code` when it has one (`storage_unknown` under `storage_refused`,
-the code `toft check` names), and the detail for that reason:
+**Read `reason` first.** A failed result carries the message, `reason`, a
+`code` — the refusal's own when it has one (`storage_unknown` under
+`storage_refused`, the code `toft check` names), else the reason, else
+`deploy_failed` — `retryable: false`, and the detail for that reason:
 
 ```json
 {"deployment_id":"…","app":"my-app","status":"failed","phase":"scan","step":"scan",
@@ -395,8 +406,11 @@ toft deps --json | jq '.refused.findings[] | {package, version, advisory_id, sev
   when one of those changed).
 
 `toft deps` needs edit access to the app. Its `--json` also carries
-`scan_reason` (why the release was not scanned — `not_covered` for R,
-`unresolved` when the build's packages could not be listed), `locked_by_policy`
+`scan_reason` (why the release was not scanned — `not_covered` for R with a
+`renv.lock`, `not_enumerable` for R without one, `unresolved` when the build's
+packages could not be listed, `no_dependencies` for a static app,
+`never_scanned` when nothing was recorded and a redeploy would scan it,
+`not_scanned_by_policy` when the install does not scan on deploy), `locked_by_policy`
 (the policy itself holds the app locked, not an administrator) and `lock_on`
 (the severity the install locks at: off, malware, critical or high).
 
@@ -404,7 +418,8 @@ toft deps --json | jq '.refused.findings[] | {package, version, advisory_id, sev
 
 A new app is private: an anonymous request answers `authentication required`.
 `toft fetch` sends your key to the app's address (from `toft status`) without
-you holding it:
+you holding it — on its own hostname once `toft hostname --on` has moved it
+there, the key going with it:
 
 ```sh
 toft fetch /                    # status line, then the body (8 KiB of it)
@@ -542,7 +557,11 @@ timing, as the install recorded it) beside the status fields.
   exit 2 `not_found` / `ambiguous_id`, and `invalid_id` for one under 6.
 - **`toft rollback`** names the release it restored (`deployment_id` under
   `--json`, on the result and on every progress frame; the platform's own
-  short-lived rollback row is `watched_id` on those frames).
+  short-lived rollback row is `watched_id` on those frames). A rollback across
+  a base-path change is rebuilt, so its row stays in `toft deployments`, newest
+  of all, with `restored_from` naming the release it restored — the next
+  `rollback` goes back from that release, never forward to the one it left.
+  Past the oldest kept release it is exit 2 `nothing_older`.
 - **How far back you can roll is what retention keeps.** By default an app keeps
   **3 versions, the serving one included** — so two to roll back to. The owner
   changes the number ("Deployments to keep", `releases_kept` on `PATCH
@@ -619,7 +638,8 @@ result object writes one:
   next command (`toft start`, `toft job logs <id>`, `toft job rerun <id>`).
 - Client-side codes include `manifest_invalid` (toml does not parse),
   `no_such_directory`, `env_not_set`, `owner_group_required`, the credential
-  codes above, `not_signed_in` / `no_install` (no credential for that install),
+  codes above, `not_signed_in` / `no_install` (no credential for that install;
+  exit 3, `toft login` with no install named included),
   `no_session` / `session_expired` (`--session` with none, or one that ended),
   the usage codes under Command-line rules, `invalid_visibility`,
   `invalid_kind` / `invalid_severity` (`toft events`), `wait_timeout` (a job
@@ -879,10 +899,14 @@ toft store rm -r --yes reports/2025/
   its exit and `code` (`cp` of one file onto an existing name at `write` is exit
   3 `already_exists`, as `put` is); a mixed batch is exit 1 `partial_failure`
   "n of m failed", and `--json` items each carry their `code` (a failed item's
-  `bytes` is 0).
+  `bytes` is 0; a local file that cannot be read is `unreadable_file`).
+  `rm -r --json` prints one `{object, bytes, deleted}` per item, as `cp`/`mv`
+  do, with `error` and `code` on a failed one.
+- `put` below `write` and `rm` below `full` are exit 3 `insufficient_access`,
+  hinted, as `mv` is.
 - **`store_busy`** (exit 1, retryable) is the store pacing you — host storage
-  admits four transfers per person at once. A batch backs off and retries it
-  itself, so a high `-j` slows down rather than fails; what still fails after
+  admits four transfers per person at once. A batch — `cp`, `mv` and `rm -r`
+  — backs off and retries it itself, so a high `-j` slows down rather than fails; what still fails after
   the retries carries the code.
 - `get -o - --json` is exit 2 `conflicting_flags` (both want stdout).
 - Each object moves on its own signed URL at your level on it. `-j N` parallel
@@ -955,8 +979,12 @@ cat body.json | toft api POST apps/$ID/job-runs --data @-
 | An app's name, slug, branch, embedding origins or listing | `PATCH /api/v1/apps/{id}` with the field, or the Settings page. Env, visibility and hostname have verbs |
 | Creating, editing or deleting a job, `[render]` or `[restart]` | Not a call: `toft.toml`, shipped with `toft deploy`. Pausing is above |
 | How big the machine is | `toft api GET system/health` (an administrator): `system.memory_total` (bytes) and `system.cpu_count`, on an install without a cluster. A job limit set above them is saved with a `warning` |
-| An app's tags | `PUT /api/v1/apps/{id}/tags` with ids of existing tags; creating tags is an administrator's |
-| Grants, storage resources, delegations, storage mappings made in the console, integrations | Administrator surfaces (UI, or API with `--session`). An administrator's key can create storage and attach it; grants, managers and integrations need `--session`. **Create** is `POST admin/storage` with `{"name","kind"}` plus what the install asks for: `backing` (left out, the kind's default or the one the install offers, `host` where it offers host beside others; with several and neither, 422 `storage_backing_required` lists them — `GET admin/storage` does too; one named that the install does not offer is 422 `storage_backing_unavailable`), `storage_root` when the install keeps storage under host roots (left out, the single root when it declares one; with several, `storage_root_required` lists them), and `bucket` and `prefix` for a `store` or a bucket-backed volume. **Attach** is `PUT admin/storage/<id>/mappings/<app-id>` with `{"path","access","folder"}`, every key optional: `path` defaults to `/storage/<name>[/<folder>]` as in toft.toml; under a host root the level is the root's mount — `full` on a read-write root, `read` on a read-only one, anything else 400 `storage_level_unsupported` (leave `access` out to take it); `folder` is required on a partitioned resource (422 `storage_folder_required`). A path another of the app's mappings holds, or one inside or above it — the resource whole and a folder of it at `/storage/x` and `/storage/x/f` — is 409 `storage_path_taken` with a hint: an app holds a resource whole or by folder at nesting paths, not both. It takes effect at the app's next start — a restart or a deploy. `DELETE …/mappings/<app-id>` removes every mapping of that resource on the app; `?folder=<name>` removes one, and `?folder=` the whole-resource mapping. Attaching existing storage is a `[[storage]]` entry |
+| An app's tags | `PUT /api/v1/apps/{id}/tags` with `{"tags":{"<tag-slug>":"<value>"}}` — slugs of existing tags; an empty value clears one, a slug left out is untouched; creating tags is an administrator's |
+| Grants, storage resources, delegations, storage mappings made in the console, integrations | Administrator surfaces (UI, or API with `--session`). An administrator's key can create storage and attach it; grants, managers and integrations need `--session`. **Create** is `POST admin/storage` with `{"name","kind"}` (a name in use is 409 `name_taken`; one that breaks the naming rule is 400 `invalid_storage_name`, exit 2) plus what the install asks for: `backing` (left out, the kind's default or the one the install offers, `host` where it offers host beside others; with several and neither, 422 `storage_backing_required` lists them — `GET admin/storage` does too; one named that the install does not offer is 422 `storage_backing_unavailable`), `storage_root` when the install keeps storage under host roots (left out, the single root when it declares one; with several, `storage_root_required` lists them), and `bucket` and `prefix` for a `store` or a bucket-backed volume (`prefix` is
+kept without leading or trailing `/`: `reports/` is stored as `reports`). A
+**delegation** — who may attach it — is `PUT admin/storage/<id>/managers` with
+`{"subject_type","subject_id","max_access"}`: `max_access`, the ceiling, where a
+grant takes `access`. **Attach** is `PUT admin/storage/<id>/mappings/<app-id>` with `{"path","access","folder"}`, every key optional: `path` defaults to `/storage/<name>[/<folder>]` as in toft.toml; under a host root the level is the root's mount — `full` on a read-write root, `read` on a read-only one, anything else 400 `storage_level_unsupported` (leave `access` out to take it); `folder` is required on a partitioned resource (422 `storage_folder_required`). A path another of the app's mappings holds, or one inside or above it — the resource whole and a folder of it at `/storage/x` and `/storage/x/f` — is 409 `storage_path_taken` with a hint: an app holds a resource whole or by folder at nesting paths, not both. It takes effect at the app's next start — a restart or a deploy. `DELETE …/mappings/<app-id>` removes every mapping of that resource on the app; `?folder=<name>` removes one, and `?folder=` the whole-resource mapping. Attaching existing storage is a `[[storage]]` entry |
 | Publishing from RStudio | rsconnect's own surface (`/__api__`, the install posing as Posit Connect); an agent deploys with `toft` |
 
 ## When something refuses
