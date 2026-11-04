@@ -813,7 +813,9 @@ with `path = "/data/cli"` at `…/storage/data/cli`. Never build the path
 yourself; read it.
 
 **Every path prints as `toft://<store>/<path>`** (folders end in `/`), and every
-subcommand takes that form back. `<store>/<path>` works too — for `cp`/`mv`
+subcommand takes that form back. One exception: `ls --json` is
+`{"folders": [...], "objects": [...]}` with names **relative to what was
+listed** (`"sub/"`, `"a.txt"`) — join them onto the path you listed. `<store>/<path>` works too — for `cp`/`mv`
 with `toft://` on neither side, only when nothing in the working directory has
 the store's name (a local folder wins; write `toft://` to mean the store).
 
