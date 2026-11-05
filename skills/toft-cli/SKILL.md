@@ -54,6 +54,12 @@ terminal) refuses it, exit 2 `unattended_login`, rather than wait. Use a key:
 printf '%s' "$TOFT_KEY" | toft login --token-stdin https://toft.corp
 ```
 
+The address is the install's — the one Toft opens at in a browser — never an
+app's link. `toft login` asks it for `/api/v1/config` before sending anything,
+and an app's address (a `/apps/<slug>` path, or the origin apps are served on)
+is refused, exit 2 `not_an_install`, with nothing stored; the hint names the
+install's address when it can tell.
+
 With no URL, `--token-stdin` re-keys the stored default install, and refuses
 before reading anything when there is none. A signal (Ctrl-C, SIGTERM) ends a
 read of stdin — `--token-stdin`, `--password-stdin`, `--from-file -`, `--data
@@ -1013,6 +1019,7 @@ cat body.json | toft api POST apps/$ID/job-runs --data @-
 | | |
 |---|---|
 | An app's name, slug, branch, embedding origins or listing | `PATCH /api/v1/apps/{id}` with the field, or the Settings page. Env, visibility and hostname have verbs |
+| Whether an app learns who is viewing it | An administrator's switch: `PATCH /api/v1/apps/{id}` with `{"viewer_identity": true}`, or **Can see who is viewing** on the app's Settings tab. Anyone else is refused; ask an administrator. Refused for static, document and batch apps |
 | Creating, editing or deleting a job, `[render]` or `[restart]` | Not a call: `toft.toml`, shipped with `toft deploy`. Pausing is above |
 | How big the machine is | `toft api GET system/health` (an administrator): `system.memory_total` (bytes) and `system.cpu_count`, on an install without a cluster. A job limit set above them is saved with a `warning` |
 | An app's tags | `PUT /api/v1/apps/{id}/tags` with `{"tags":{"<tag-slug>":"<value>"}}` — slugs of existing tags; an empty value clears one, a slug left out is untouched; creating tags is an administrator's |
@@ -1037,7 +1044,8 @@ or `kind` is; a `store` or bucket-backed volume created without `prefix` is 400
 | `no_app_token` (exit 3) | a route only a deployed app calls, with its `TOFT_APP_TOKEN` — an SDK-built URL such as `logs_url` opened with a person's key; use `toft logs` / `toft job runs` instead |
 | `app_key_removed` (exit 3) | a `toft_…` app key: that class was removed. Use a personal key (`toftu_…`) of an account granted on the app — `toft login` mints one |
 | `forbidden` (exit 3, `deny_system_role`) | **creating** an app as an account whose role is **viewer**; creating needs the publisher role, which only an administrator grants. A **personal** key can ask: an empty `POST /api/v1/me/promotion-requests` (notifies administrators; 409 if one is pending) — then say who must act. A deploy key or service account cannot |
-| `forbidden` (exit 3, `deny_no_action`) | acting on an **existing** app — deploy, rollback, visibility, settings — that your role **on that app** does not allow (you are its viewer). Deploying needs editor on it: `toft api POST apps/<id>/access-requests --data '{"role":"editor"}'` asks its owner. An account whose install role is viewer cannot hold editor — it needs the publisher role first (`deny_system_role` above). The refusal's `hint` says the same |
+| `forbidden` (exit 3, `deny_no_action`) | acting on an **existing** app — deploy, rollback, settings — that your role **on that app** does not allow (you are its viewer). Deploying needs editor on it: `toft api POST apps/<id>/access-requests --data '{"role":"editor"}'` asks its owner. An account whose install role is viewer cannot hold editor — it needs the publisher role first (`deny_system_role` above). The refusal's `hint` says the same |
+| `forbidden` (exit 3, `deny_owner_only`) | deleting an app, changing its `visibility` or `frame_ancestors`, or reading or changing its grants, as its editor or viewer. These are the owner's (or an administrator's) alone, so no access request helps — ask the owner. The refusal's `hint` says the same |
 | `session_required` (exit 3) | an administrator's route; see `--session` |
 | a license limit (exit 3) | a limit on the install; nothing deployed has stopped |
 | deploy failed during `scan` | the dependency gate or the archive's caps; `reason` says which |
