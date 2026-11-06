@@ -30,6 +30,14 @@ env, logs, jobs) is the **toft-cli** skill.
   again; routes still match the stripped path.
 - **Redirects need not.** The proxy prefixes a root-relative `Location: /done`
   on the way out (Next.js included) and leaves one that already carries it alone.
+- **The request's `Host` is internal.** The gateway connects to you at
+  `127.0.0.1:<PORT>` (or the pod), so `request.host_url` and its kin answer
+  that. It sets `X-Forwarded-Host`, `X-Forwarded-Proto` and
+  `X-Forwarded-Prefix` (and `X-Script-Name`) itself, discarding what the client
+  sent, so a framework told to trust them — Werkzeug's `ProxyFix(x_host=1,
+  x_proto=1, x_prefix=1)` — builds the outward address correctly inside a
+  request. **A link that leaves the app — an email, a Slack post, a PDF — is
+  `toft.app.url(path)`**, which needs no request and works in a job.
 - **Anything else is an environment variable** someone sets on the app's
   Settings page or with `toft env set`; a restart applies it. Declare what the
   code needs under `[env]` in `toft.toml`. **A `.env` file is never deployed** —
@@ -384,11 +392,24 @@ signing and reading runs have their own 600/min buckets.
 toft.app.id, toft.app.slug, toft.app.name, toft.app.mode, toft.app.base_path
 toft.app.capabilities, toft.app.policy
 toft.app.can("email")          # an integration name, or a full one like "email.send"
+toft.app.url("/reports/42")    # https://apps.example.com/apps/reporter/reports/42
+toft.app.url(run.status_url)   # a run's status page, absolute
 ```
 
 Go: `toft.App.Self(ctx)` → `AppInfo{ID, Slug, Name, Mode, BasePath, …}`,
-`toft.App.Can(ctx, "email")`. R: `app_info()` (cached; `refresh = TRUE`),
-`app_base_path()`, check `app_info()$capabilities`.
+`toft.App.Can(ctx, "email")`, `toft.App.URL(ctx, "/reports/42")`. Node:
+`await toft.app.url("/reports/42")`. R: `app_info()` (cached; `refresh = TRUE`),
+`app_base_path()`, `app_url("/reports/42")`, check `app_info()$capabilities`.
+
+- **`url(path)` is for a link read outside the app's own pages** — email,
+  Slack, a PDF, a ticket; inside a page, relative links from `base_path` stay
+  right. The path is the app's (`/x` and `x` both mean the app's route), one
+  already carrying the base path (`status_url`, `url_for`) is not prefixed
+  twice, a query or fragment is kept, an absolute URL is `bad_request`. The
+  address is asked of the platform and reused for 60 s, so a moved install or a
+  new hostname is followed without a restart; it works in jobs; an install with
+  no apps address configured refuses `no_public_address`. Never store the
+  address in `toft.toml` or an env var: it belongs to the install, not the code.
 
 - `id` and `slug` need the platform like every other field: off-platform they
   raise `off_platform` (Node too — never `""`).
@@ -479,7 +500,7 @@ R `caller_role(headers)`, `caller_can(headers, "editor")`, `viewer(headers)`.
 | `toft.mounts()` | every mapping: `name`, `kind`, `path`, `access`, `folder`, `read_only`, `mounted` (R: list elements; Go: the encoded `Mount`, with `ReadOnly()` / `Mounted()` as methods; Python: attributes, and `m.to_dict()` for the JSON form) |
 | `toft.storage("reports").path` (`Storage(…).Path`) | a durable volume, resolved by name |
 | `toft.store("reports").put(path, name=None)` (`Store(…).Put(path, name)`) | a file into an object store **mounted here** |
-| `toft.store("reports").upload(path)` · `download(name)` · `url(name, attachment=True)` · `remove(name)` · `list(path)` | the same store over signed URLs — works mounted or not, where the install has a store signer (else `store_uploads_off`) |
+| `toft.store("reports").upload(path)` · `download(name)` · `url(name, attachment=True)` · `link(name)` · `remove(name)` · `list(path)` | the same store over signed URLs — works mounted or not, where the install has a store signer (else `store_uploads_off`) |
 
 **Prefer the signed-URL calls for stores.** On an install with no cluster
 nothing mounts a store: its path is empty, `.path` raises (`not_mounted`; Go
@@ -491,6 +512,20 @@ holding it can read. Go: `Upload(ctx, path, "")`, `Download(ctx, name)`,
 R: `store_put`, `store_upload`, `store_download`, `store_url`, `store_remove`,
 `store_list` — and **`file.copy()` onto a mounted store writes a zero-byte
 object**; use `store_put`.
+
+**For a link in an email or a report, use `link(name)`, not `url()`.**
+`toft.store("reports").link("2026-11/summary.pdf")` returns
+`https://<install>/files/reports/2026-11/summary.pdf`: it carries no credential,
+never expires, and works from a job. **Only people granted that store can open
+it** — the platform signs them in and checks their grant at the click; everyone
+else gets "Not found". So grant the recipients the store (Admin → Storage → the
+store's page) or send them something else; the app cannot check who holds a
+grant. It opens whatever is at the name *when clicked*, so write dated names
+(`2026-11/summary.pdf`), never a fixed `latest.pdf`, if a mailed link must keep
+meaning the mailed file. The file need not exist yet. Works on a store and on a
+volume on a host root (`toft.storage(…).link`). Go `Link(ctx, name)`, Node
+`await link(name)`, R `store_link(s, name)`. No install address is
+`no_public_address`.
 
 **One name can be two mounts** (the root read-only, a folder at `write`). Then a
 lookup with no folder raises `ambiguous_mount`, listing them; name the folder —
