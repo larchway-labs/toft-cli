@@ -336,10 +336,17 @@ Branch on the fields, never the sentence:
 
 | | Python / Node | Go | R |
 |---|---|---|---|
+| catch it | `except toft.ToftError as err` · `catch (err) { if (err instanceof toft.ToftError) … }` | `var e *toft.Error; errors.As(err, &e)` | `tryCatch(…, toft_error = function(e) …)` |
 | `code` — stable name | `err.code` | `err.Code()` | `e$code` |
 | `retryable` — the platform's decision, not the status's | `err.retryable` | `err.Retryable()` | `e$retryable` |
 | `hint` — next step, may be absent | `err.hint` | `err.Hint()` (`""`) | `e$hint` (NULL) |
 
+**The class is spelled differently per language, and a wrong guess only fails
+on the first refusal**: Python's and Node's is `toft.ToftError` (Node also
+exports `ToftError` by name); `toft.Error` is Go's and **does not exist in
+Python** — `except toft.Error` passes every test that raises nothing and is an
+`AttributeError` the first time the SDK refuses. Python's `toft.QueueFull` and
+`toft.VersionConflict` subclass `ToftError`.
 Go: `toft.AsError(err)`, or `errors.As` to `*toft.QueueFullError` (`InFlight`,
 `Limit`) / `*toft.VersionConflictError`. R: `tryCatch(…, toft_error = function(e) …)`.
 R: a request that never got an answer is a `toft_error` too (`code` `""`,
@@ -500,14 +507,17 @@ R `caller_role(headers)`, `caller_can(headers, "editor")`, `viewer(headers)`.
 | `toft.mounts()` | every mapping: `name`, `kind`, `path`, `access`, `folder`, `read_only`, `mounted` (R: list elements; Go: the encoded `Mount`, with `ReadOnly()` / `Mounted()` as methods; Python: attributes, and `m.to_dict()` for the JSON form) |
 | `toft.storage("reports").path` (`Storage(…).Path`) | a durable volume, resolved by name |
 | `toft.store("reports").put(path, name=None)` (`Store(…).Put(path, name)`) | a file into an object store **mounted here** |
-| `toft.store("reports").upload(path)` · `download(name)` · `url(name, attachment=True)` · `link(name)` · `remove(name)` · `list(path)` | the same store over signed URLs — works mounted or not, where the install has a store signer (else `store_uploads_off`) |
+| `toft.store("reports").upload(path, name=None)` · `download(name)` · `url(name, attachment=True)` · `link(name)` · `remove(name)` · `list(path)` | the same store over signed URLs — works mounted or not, where the install has a store signer (else `store_uploads_off`) |
 
 **Prefer the signed-URL calls for stores.** On an install with no cluster
 nothing mounts a store: its path is empty, `.path` raises (`not_mounted`; Go
 `Mounted()` is false and `Put` refuses), and only `upload`/`download`/… work —
 the same code runs in both modes. `write` access creates new objects only (an
 existing name is `already_exists`); `url()` is a fifteen-minute link anyone
-holding it can read. Go: `Upload(ctx, path, "")`, `Download(ctx, name)`,
+holding it can read. `upload` names the object after the local file unless
+given a name — `upload("out/q1.csv", name="2026/q1.csv")` (Node
+`upload(path, "2026/q1.csv")`, R `store_upload(s, path, "2026/q1.csv")`) — and
+returns the name it stored. Go: `Upload(ctx, path, "")` (a name in place of `""`), `Download(ctx, name)`,
 `URL(ctx, name, attachment)`. Node: `url(name, { attachment: true })`.
 R: `store_put`, `store_upload`, `store_download`, `store_url`, `store_remove`,
 `store_list` — and **`file.copy()` onto a mounted store writes a zero-byte
