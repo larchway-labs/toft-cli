@@ -459,7 +459,8 @@ R `caller_role(headers)`, `caller_can(headers, "editor")`, `viewer(headers)`.
 
 - **Caller role** is one of `owner`, `editor`, `viewer`, `anonymous`, `system`
   (a schedule firing), `app` — or `unknown` (missing, unverifiable or expired),
-  which passes no `at_least`. The assertion lasts two minutes: in Streamlit,
+  which passes no `at_least`. When a group owns the app, every member of that
+  group is `owner`. The assertion lasts two minutes: in Streamlit,
   read it once at the top of the script.
 - **`is_person` means the caller is on the person ladder** (`anonymous`,
   `viewer`, `editor`, `owner`), not that a human is there. An anonymous visitor
