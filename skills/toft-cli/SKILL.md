@@ -336,6 +336,8 @@ hint.
 On `deploy`, `redeploy`, `rollback` and `create`: once the platform says the
 deploy succeeded, request that path as you; exit 1 unless 2xx/3xx. (The
 platform's readiness probe only asks whether the process answers *something*.)
+A deploy key never opens an app, so under one `--verify` (like `toft fetch`)
+works only on a public app; use a personal key of an account granted on it.
 A 5xx or refused connection is retried for `--verify-timeout` (30s); a 404 is
 not. Under `--json` it is a `verify` object in the result. **A failed check
 leaves the new release serving**: the message and `verify.next` name `toft

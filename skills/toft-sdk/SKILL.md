@@ -75,7 +75,7 @@ First match wins:
 | 9 | notebook | one root `.ipynb`, or a `.qmd` that is not R — rendered at build time |
 | 10 | Shiny | `app.R`; `ui.R` **and** `server.R`; or `server.R` + `www/index.html` (`.r` works too) |
 | 11 | plumber | `plumber.R`, or a root `.R` file with a route annotation — `#* @get /x` (any of `@get`, `@post`, `@put`, `@delete`, `@head`, `@options`, `@patch`, `@use`; `#'` works too). A bare `#*` line is not one: such a tree is `unsupported_framework` |
-| 12 | Flask / FastAPI / Streamlit / Python | `requirements.txt`, `pyproject.toml` or `Pipfile` (framework read from it) **plus** a root `app.py`, `main.py`, `streamlit_app.py`, `server.py` or `wsgi.py` — no entry file, no deploy |
+| 12 | Flask / FastAPI / Streamlit / Python | `requirements.txt`, `pyproject.toml` or `Pipfile` (framework read from it) **plus** a root `app.py`, `main.py`, `streamlit_app.py`, `server.py` or `wsgi.py` — no entry file, no deploy. FastAPI needs `uvicorn` (or `fastapi[standard]`) in its dependencies — Toft adds no web server, and the build fails naming the fix |
 | 13 | static | only with none of `package.json`, `requirements.txt`, `pyproject.toml`, `Pipfile`, `go.mod`, and an HTML entry |
 | 14 | Python | none of the files above and no HTML, but a root `app.py`, `main.py`, `streamlit_app.py`, `server.py` or `wsgi.py` — a plain Python app with no dependencies, run with `python <entry>` |
 
@@ -254,7 +254,9 @@ are coerced to the declared type; a `float` param arrives as a float (`2` and
 - `overlap = "queue"` holds a firing behind the previous scheduled run; `"skip"`
   records a `skipped` run. A firing refused by a full queue is also `skipped`.
   Runs somebody starts are never held behind scheduled ones.
-- `notify` alerts owners per failed (`failures`) or finished (`always`) run;
+- `notify` alerts owners per failed (`failures`) or finished (`always`) run
+  (failure emails obey the app's "email when it breaks" switch; `always`'s
+  success email does not);
   skipped and cancelled say nothing.
 - A job's `command` runs through `/bin/sh -c`, so the shell's quoting and
   expansion apply: in `Rscript -e "cat(toft::current_run()$trigger)"` the

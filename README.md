@@ -139,6 +139,9 @@ export TOFT_TOKEN=toftd_...
 toft deploy --no-watch
 ```
 
+A deploy key deploys an app but cannot open it: `toft fetch` and
+`--verify` need a public app, or a personal key of an account granted on it.
+
 A deploy key creates an app only into a group that will own it:
 `toft create --yes --owner-group <name|id>`. Without the flag it is refused,
 exit 2, before anything is uploaded.
