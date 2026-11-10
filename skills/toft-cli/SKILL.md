@@ -48,7 +48,13 @@ terminal) refuses it, exit 2 `unattended_login`, rather than wait. Use a key:
 - a personal API key, `toftu_` (a person mints it under **Your account →
   Credentials**), or
 - a deploy key, `toftd_` (an administrator mints it under **Admin → Deploy
-  keys**).
+  keys**), or
+- a short-lived key, `toftx_`, which a tool the administrator trusts (**Admin →
+  Authentication → Trusted issuers**) obtained for a person by exchanging its
+  identity token at `POST /api/v1/auth/token-exchange`. It acts as that person
+  but only on the deploy surface — create, push, watch, roll back; anything
+  else is exit 3 `key_deploy_scope`. When it expires (`key_expired`) the tool
+  exchanges a fresh token; there is nothing to renew from `toft`.
 
 ```bash
 printf '%s' "$TOFT_KEY" | toft login --token-stdin https://toft.corp
